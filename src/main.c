@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include "../inc/bitboard.h"
+#include "../inc/moves.h"
 
 int main(void) {
     Bitboard pieces[12] = {0};
@@ -45,6 +45,14 @@ int main(void) {
     print_bitboard(pieces[N]);
     printf("White knight attacks from g1: \n");
     print_bitboard(knight_attacks[G1]);
+    printf("White knight attacks from b1: \n");
+    print_bitboard(knight_attacks[B1]);
+    printf("White knight attacks from e1: \n");
+    print_bitboard(knight_attacks[E1]);
+    printf("White knight attacks from e8: \n");
+    print_bitboard(knight_attacks[E8]);
+    printf("White knight attacks from e4: \n");
+    print_bitboard(knight_attacks[E4]);
 
     init_king_attacks();
     printf("White king attacks from a4: \n");
@@ -58,9 +66,23 @@ int main(void) {
     printf("White king attacks from e8: \n");
     print_bitboard(king_attacks[E8]);
 
+    init_pawn_attacks();
+    printf("White pawn attacks from e4: \n");
+    print_bitboard(pawn_attacks[WHITE][E4]);
+
     printf("Mock chessboard: \n");
     Bitboard mock = 0x3F3F3F3F3F3F3F3FULL;
     print_bitboard(mock);
+
+    MoveList move_list = { .count = 0};
+
+    Move e2e3 = ENCODE_MOVE(E2, E3, P, 0, 0, 0, 0, 0);
+    add_move(&move_list, e2e3);
+
+    Move move = move_list.moves[0];
+    printf("Source square: %d\n", MOVE_SRC(move));
+    printf("Target square: %d\n", MOVE_TARGET(move));
+    printf("Is double push: %d\n", MOVE_IS_DOUBLE(move));
 
     return 0;
 }

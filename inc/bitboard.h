@@ -35,27 +35,8 @@ enum {
     A8 = 56, B8, C8, D8, E8, F8, G8, H8,
 };
 
-void init_board(Bitboard pieces[12], Bitboard occupancy[3]);
+void init_board(Bitboard pieces[12], Bitboard occupancy[BOTH]);
 
 void print_bitboard(Bitboard bitboard);
-
-Bitboard get_white_single_pushes(Bitboard wpawns, Bitboard occupied);
-Bitboard get_white_double_pushes(Bitboard single_pushes, Bitboard occupied);
-
-Bitboard get_black_single_pushes(Bitboard bpawns, Bitboard occupied);
-Bitboard get_black_double_pushes(Bitboard single_pushes, Bitboard occupied);
-
-Bitboard get_white_pawn_attack_west(Bitboard wpawns);
-Bitboard get_white_pawn_attack_east(Bitboard wpawns);
-Bitboard get_black_pawn_attack_west(Bitboard bpawns);
-Bitboard get_black_pawn_attack_east(Bitboard bpawns);
-
-extern Bitboard knight_attacks[64];
-Bitboard mask_knight_attacks(int sq);
-void init_knight_attacks(void);
-
-extern Bitboard king_attacks[64];
-Bitboard mask_king_attacks(int sq);
-void init_king_attacks(void);
 
 #endif

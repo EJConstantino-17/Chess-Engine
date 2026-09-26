@@ -16,7 +16,7 @@ void print_bitboard(Bitboard bitboard) {
 }
 
 
-void init_board(Bitboard pieces[12], Bitboard occupancy[3]) {
+void init_board(Bitboard pieces[12], Bitboard occupancy[BOTH]) {
     pieces[P]   = 0x000000000000FF00ULL;
     pieces[N] = (1ULL << B1) | (1ULL << G1);
     pieces[B] = (1ULL << C1) | (1ULL << F1);

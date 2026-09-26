@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -Iinc
 
-SRCS = src/main.c src/bitboard.c src/movegen.c
+SRCS = src/main.c src/bitboard.c src/movegen.c src/moves.c
 OBJS = $(SRCS:.c=.o)
 TARGET = main.exe
 
