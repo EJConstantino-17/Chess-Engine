@@ -1,7 +1,7 @@
 #ifndef MOVEGEN_H
 #define MOVEGEN_H
 
-#include "../inc/bitboard.h"
+#include "bitboard.h"
 
 Bitboard get_white_single_pushes(Bitboard wpawns, Bitboard occupied);
 Bitboard get_white_double_pushes(Bitboard single_pushes, Bitboard occupied);
@@ -39,8 +39,9 @@ Bitboard get_queen_attacks(int sq, Bitboard occupied);
 
 typedef struct MoveList MoveList;
 
-void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move);
+void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq);
 void generate_piece_moves(MoveList *move_list, int piece_type, Bitboard piece_bb, Bitboard own_occ, Bitboard enemy_occ, Bitboard both_occ);
-void generate_all_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move);
+void generate_all_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq, int castle_rights);
+void generate_castling_moves(MoveList *move_list, Bitboard occupancy[3], int side_to_move, int castle_rights);
 
 #endif

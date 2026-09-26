@@ -18,6 +18,16 @@ typedef uint64_t Bitboard;
 #define NOT_H_FILE 0x7F7F7F7F7F7F7F7FULL
 #define NOT_GH_FILE 0x3F3F3F3F3F3F3F3FULL
 
+#define WK_RIGHT 1
+#define WQ_RIGHT 2
+#define BK_RIGHT 4
+#define BQ_RIGHT 8
+
+#define WK_PATH ((1ULL << F1) | (1ULL << G1))
+#define WQ_PATH ((1ULL << D1) | (1ULL << C1) | (1ULL << B1))
+#define BK_PATH ((1ULL << F8) | (1ULL << G8))
+#define BQ_PATH ((1ULL << D8) | (1ULL << C8) | (1ULL << B8))
+
 enum {
     P, N, B, R, Q, K,
     p, n, b, r, q, k

@@ -127,7 +127,8 @@ Bitboard get_queen_attacks(int sq, Bitboard occupied) {
     return get_bishop_attacks(sq, occupied) | get_rook_attacks(sq, occupied);
 }
 
-void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move) {
+void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq) {
+    int NO_SQUARE = -1;
     if (side_to_move == WHITE) {
         Bitboard wpawns = pieces[P];
 
@@ -155,7 +156,7 @@ void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occu
             }
 
             Bitboard attacks = pawn_attacks[WHITE][src] & occupancy[BLACK];
-            while (attacks) {
+            while(attacks) {
                 int target = pop_lsb(&attacks);
                 if (target >= A8 && target <= H8) {
                     add_move(move_list, ENCODE_MOVE(src, target, P, Q, 1, 0, 0, 0));
@@ -165,6 +166,14 @@ void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occu
                 } else {
                     add_move(move_list, ENCODE_MOVE(src, target, P, 0, 1, 0, 0, 0));
                 }
+            }
+        }
+
+        if (ep_sq != NO_SQUARE) {
+            Bitboard attackers = pawn_attacks[BLACK][ep_sq] & pieces[P];
+            while(attackers) {
+                int src = pop_lsb(&attackers);
+                add_move(move_list, ENCODE_MOVE(src, ep_sq, P, 0, 1, 0, 1, 0));
             }
         }
     } else {
@@ -206,6 +215,14 @@ void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occu
                 }
             }
         }
+
+        if (ep_sq != NO_SQUARE) {
+            Bitboard attackers = pawn_attacks[WHITE][ep_sq] & pieces[p];
+            while(attackers) {
+                int src = pop_lsb(&attackers);
+                add_move(move_list, ENCODE_MOVE(src, ep_sq, P, 0, 1, 0, 1, 0));
+            }
+        }
     }
 }
 
@@ -232,17 +249,41 @@ void generate_piece_moves(MoveList *move_list, int piece_type, Bitboard piece_bb
     }
 }
 
-void generate_all_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move) {
+void generate_all_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq, int castle_rights) {
     move_list->count = 0;
 
     int own_color = side_to_move;
     int enemy_color = (side_to_move == WHITE) ? BLACK : WHITE;
 
-    generate_pawn_moves(move_list, pieces, occupancy, side_to_move);
+    generate_pawn_moves(move_list, pieces, occupancy, side_to_move, ep_sq);
     int offset = (side_to_move == WHITE) ? 0 : 6;
     generate_piece_moves(move_list, N + offset, pieces[N + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
     // generate_piece_moves(move_list, B + offset, pieces[B + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
     // generate_piece_moves(move_list, R + offset, pieces[R + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
     // generate_piece_moves(move_list, Q + offset, pieces[Q + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
     generate_piece_moves(move_list, K + offset, pieces[K + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
+
+    generate_castling_moves(move_list, occupancy, side_to_move, castle_rights);
+}
+
+void generate_castling_moves(MoveList *move_list, Bitboard occupancy[3], int side_to_move, int castle_rights) {
+    if (side_to_move == WHITE) {
+
+        if ((castle_rights & WK_RIGHT) && !(occupancy[BOTH] & WK_PATH)) {
+            add_move(move_list, ENCODE_MOVE(E1, G1, K, 0, 0, 0, 0, 1));
+        }
+
+        if ((castle_rights & WQ_RIGHT) && !(occupancy[BOTH] & WQ_PATH)) {
+            add_move(move_list, ENCODE_MOVE(E1, C1, K, 0, 0, 0, 0, 1));
+        }
+    } else {
+
+        if ((castle_rights & BK_RIGHT) && !(occupancy[BOTH] & BK_PATH)) {
+            add_move(move_list, ENCODE_MOVE(E8, G8, k, 0, 0, 0, 0, 1));
+        }
+
+        if ((castle_rights & BQ_RIGHT) && !(occupancy[BOTH] & BQ_PATH)) {
+            add_move(move_list, ENCODE_MOVE(E8, C8, k, 0, 0, 0, 0, 1));
+        }
+    }
 }
