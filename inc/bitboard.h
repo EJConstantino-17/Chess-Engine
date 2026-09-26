@@ -39,4 +39,15 @@ void init_board(Bitboard pieces[12], Bitboard occupancy[BOTH]);
 
 void print_bitboard(Bitboard bitboard);
 
+static inline int get_lsb_index(Bitboard bitboard) {
+    if (bitboard == 0) return -1;
+    return __builtin_ctzll(bitboard);
+}
+
+static inline Bitboard pop_lsb(Bitboard *bitboard) {
+    int index = get_lsb_index(*bitboard);
+    *bitboard &= *bitboard - 1;
+    return index;
+}
+
 #endif

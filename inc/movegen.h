@@ -37,4 +37,10 @@ Bitboard get_bishop_attacks(int sq, Bitboard occupied);
 Bitboard get_rook_attacks(int sq, Bitboard occupied);
 Bitboard get_queen_attacks(int sq, Bitboard occupied);
 
+typedef struct MoveList MoveList;
+
+void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move);
+void generate_piece_moves(MoveList *move_list, int piece_type, Bitboard piece_bb, Bitboard own_occ, Bitboard enemy_occ, Bitboard both_occ);
+void generate_all_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move);
+
 #endif

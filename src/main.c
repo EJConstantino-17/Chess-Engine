@@ -1,88 +1,27 @@
 #include <stdio.h>
-#include "../inc/moves.h"
+#include "moves.h"
 
 int main(void) {
     Bitboard pieces[12] = {0};
     Bitboard occupancy[3] = {0};
 
     init_board(pieces, occupancy);
-
-    Bitboard white_single = get_white_single_pushes(pieces[P], occupancy[BOTH]);
-    Bitboard white_double =  get_white_double_pushes(white_single, occupancy[BOTH]);
-    
-    Bitboard black_single = get_black_single_pushes(pieces[p], occupancy[BOTH]);
-    Bitboard black_double =  get_black_double_pushes(black_single, occupancy[BOTH]);
-
-    Bitboard white_attack_west = get_white_pawn_attack_west(pieces[P]);
-    Bitboard white_attack_east = get_white_pawn_attack_east(pieces[P]);
-    Bitboard white_pawn_attacks = white_attack_east | white_attack_west;
-
-    Bitboard white_actual_captures = white_pawn_attacks & occupancy[BLACK];
-
-    Bitboard black_attack_west = get_black_pawn_attack_west(pieces[p]);
-    Bitboard black_attack_east = get_black_pawn_attack_east(pieces[p]);
-    Bitboard black_pawn_attacks = black_attack_west | black_attack_east;
-
-    Bitboard black_actual_captures = black_pawn_attacks & occupancy[WHITE];
-    
-    printf("Initial pawns: 0x%016" PRIx64 "\n", pieces[P] | pieces[p]);
-    printf("White single: 0x%016" PRIx64 "\n", white_single);
-    printf("White double: 0x%016" PRIx64 "\n", white_double);
-    print_bitboard(white_double);
-    printf("White attacks: 0x%016" PRIx64 "\n", white_pawn_attacks);
-    print_bitboard(white_pawn_attacks);
-    printf("White captures: 0x%016" PRIx64 "\n", white_actual_captures);
-    printf("Black single: 0x%016" PRIx64 "\n", black_single);
-    printf("Black double: 0x%016" PRIx64 "\n", black_double);
-    printf("Black attacks: 0x%016" PRIx64 "\n", black_pawn_attacks);
-    print_bitboard(black_pawn_attacks);
-    printf("Black captures: 0x%016" PRIx64 "\n", black_actual_captures);
-
-    print_bitboard(occupancy[BOTH]);
-
-    init_knight_attacks();
-    printf("Initial white knights: 0x%016" PRIx64 "\n", pieces[N]);
-    print_bitboard(pieces[N]);
-    printf("White knight attacks from g1: \n");
-    print_bitboard(knight_attacks[G1]);
-    printf("White knight attacks from b1: \n");
-    print_bitboard(knight_attacks[B1]);
-    printf("White knight attacks from e1: \n");
-    print_bitboard(knight_attacks[E1]);
-    printf("White knight attacks from e8: \n");
-    print_bitboard(knight_attacks[E8]);
-    printf("White knight attacks from e4: \n");
-    print_bitboard(knight_attacks[E4]);
-
     init_king_attacks();
-    printf("White king attacks from a4: \n");
-    print_bitboard(king_attacks[A4]);
-    printf("White king attacks from e4: \n");
-    print_bitboard(king_attacks[E4]);
-    printf("White king attacks from h4: \n");
-    print_bitboard(king_attacks[H4]);
-    printf("White king attacks from e1: \n");
-    print_bitboard(king_attacks[E1]);
-    printf("White king attacks from e8: \n");
-    print_bitboard(king_attacks[E8]);
-
+    init_knight_attacks();
     init_pawn_attacks();
-    printf("White pawn attacks from e4: \n");
-    print_bitboard(pawn_attacks[WHITE][E4]);
 
-    printf("Mock chessboard: \n");
-    Bitboard mock = 0x3F3F3F3F3F3F3F3FULL;
-    print_bitboard(mock);
+    MoveList move_list;
+    generate_all_moves(&move_list, pieces, occupancy, BLACK);
 
-    MoveList move_list = { .count = 0};
+    printf("Total pseudo-legal moves for WHITE: %d\n", move_list.count);
 
-    Move e2e3 = ENCODE_MOVE(E2, E3, P, 0, 0, 0, 0, 0);
-    add_move(&move_list, e2e3);
+    for (int i = 0; i < move_list.count; i++) {
+        Move m = move_list.moves[i];
+        printf("Move %2d: Src=%2d, Target=%2d, Piece=%2d, DoublePush=%d\n",
+               i + 1, MOVE_SRC(m), MOVE_TARGET(m), MOVE_PIECE(m), MOVE_IS_DOUBLE(m));
+    }
 
-    Move move = move_list.moves[0];
-    printf("Source square: %d\n", MOVE_SRC(move));
-    printf("Target square: %d\n", MOVE_TARGET(move));
-    printf("Is double push: %d\n", MOVE_IS_DOUBLE(move));
+    fflush(stdout);
 
     return 0;
 }

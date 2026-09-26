@@ -37,10 +37,10 @@ typedef uint32_t Move;
 #define MOVE_IS_EP(move)        (((move) >> 22) & 0x01)
 #define MOVE_IS_CASTLING(move)  (((move) >> 23) & 0x01)
 
-typedef struct {
+struct MoveList {
     Move moves[256];
     int count;
-} MoveList;
+};
 
 void add_move(MoveList *move_list, Move move);
 
