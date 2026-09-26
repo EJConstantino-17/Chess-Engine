@@ -1,22 +1,27 @@
-#include "../inc/bitboard.h"
+#include "bitboard.h"
 #include <stdio.h>
 
 void print_bitboard(Bitboard bitboard) {
-    for (int rank = 7; rank >= 0; rank--) {
-        for (int file = 0; file < 8; file++) {
-            int square = rank * 8 + file;
-            if ((bitboard >> square) & 1ULL)
-                printf(" 1 ");
-            else
-                printf(" . ");
+    printf("+---+---+---+---+---+---+---+---+\n");
+
+    for (int r = 7; r >= 0; r--) {
+        for (int f = 0; f < 8; f++) {
+            int square = r * 8 + f;
+            
+            if (bitboard & (1ULL << square)) {
+                printf("| X ");
+            } else {
+                printf("|   ");
+            }
         }
-        printf("\n");
+        printf("| %d\n+---+---+---+---+---+---+---+---+\n", r + 1);
     }
-    printf("\n");
+
+    printf("  a   b   c   d   e   f   g   h\n\n");
 }
 
 
-void init_board(Bitboard pieces[12], Bitboard occupancy[BOTH]) {
+void init_board(Bitboard pieces[12], Bitboard occupancy[3]) {
     pieces[P]   = 0x000000000000FF00ULL;
     pieces[N] = (1ULL << B1) | (1ULL << G1);
     pieces[B] = (1ULL << C1) | (1ULL << F1);

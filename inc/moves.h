@@ -2,7 +2,7 @@
 #define MOVES_H
 
 #include <stdint.h>
-#include "../inc/movegen.h"
+#include "movegen.h"
 
 /*
   Move Bitfield Structure (32-bit uint32_t):

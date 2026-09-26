@@ -45,7 +45,7 @@ enum {
     A8 = 56, B8, C8, D8, E8, F8, G8, H8,
 };
 
-void init_board(Bitboard pieces[12], Bitboard occupancy[BOTH]);
+void init_board(Bitboard pieces[12], Bitboard occupancy[3]);
 
 void print_bitboard(Bitboard bitboard);
 

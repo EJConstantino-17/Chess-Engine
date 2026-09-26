@@ -5,6 +5,6 @@ main
 # Object files
 src/*.o
 
-# VS Code / IDE configs (optional)
+# VS Code / IDE configs
 .vscode/
 .idea/

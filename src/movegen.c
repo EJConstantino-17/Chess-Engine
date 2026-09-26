@@ -1,5 +1,5 @@
-#include "../inc/movegen.h"
-#include "../inc/moves.h"
+#include "movegen.h"
+#include "moves.h"
 
 Bitboard get_white_single_pushes(Bitboard wpawns, Bitboard occupied) {
     return (wpawns << 8) & ~occupied;
@@ -108,23 +108,22 @@ void init_pawn_attacks(void) {
     }
 }
 
-MagicEntry bishop_magics[64];
-MagicEntry rook_magics[64];
-
-Bitboard get_bishop_attacks(int sq, Bitboard occupied) {
-    Bitboard occ = occupied & bishop_magics[sq].mask;
-    Bitboard idx = (Bitboard)((occ * bishop_magics[sq].magic) >> bishop_magics[sq].shift);
-    return bishop_magics[sq].attacks[idx];
+Bitboard get_bishop_attacks(int sq, Bitboard occupancy) {
+    occupancy &= bishop_magics[sq].mask;
+    occupancy *= bishop_magics[sq].magic;
+    occupancy >>= bishop_magics[sq].shift;
+    return bishop_magics[sq].attacks[occupancy];
 }
 
-Bitboard get_rook_attacks(int sq, Bitboard occupied) {
-    Bitboard occ = occupied & rook_magics[sq].mask;
-    Bitboard idx = (Bitboard)((occ * rook_magics[sq].magic) >> rook_magics[sq].shift);
-    return rook_magics[sq].attacks[idx];
+Bitboard get_rook_attacks(int sq, Bitboard occupancy) {
+    occupancy &= rook_magics[sq].mask;
+    occupancy *= rook_magics[sq].magic;
+    occupancy >>= rook_magics[sq].shift;
+    return rook_magics[sq].attacks[occupancy];
 }
 
-Bitboard get_queen_attacks(int sq, Bitboard occupied) {
-    return get_bishop_attacks(sq, occupied) | get_rook_attacks(sq, occupied);
+Bitboard get_queen_attacks(int sq, Bitboard occupancy) {
+    return get_bishop_attacks(sq, occupancy) | get_rook_attacks(sq, occupancy);
 }
 
 void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq) {
@@ -229,7 +228,7 @@ void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occu
 void generate_piece_moves(MoveList *move_list, int piece_type, Bitboard piece_bb, Bitboard own_occ, Bitboard enemy_occ, Bitboard both_occ) {
     while (piece_bb) {
         int src = pop_lsb(&piece_bb);
-        Bitboard attacks;
+        Bitboard attacks = 0ULL;
         switch (piece_type) {
             case N: case n: attacks = knight_attacks[src]; break;
             case B: case b: attacks = get_bishop_attacks(src, both_occ); break;
@@ -258,9 +257,9 @@ void generate_all_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occup
     generate_pawn_moves(move_list, pieces, occupancy, side_to_move, ep_sq);
     int offset = (side_to_move == WHITE) ? 0 : 6;
     generate_piece_moves(move_list, N + offset, pieces[N + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
-    // generate_piece_moves(move_list, B + offset, pieces[B + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
-    // generate_piece_moves(move_list, R + offset, pieces[R + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
-    // generate_piece_moves(move_list, Q + offset, pieces[Q + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
+    generate_piece_moves(move_list, B + offset, pieces[B + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
+    generate_piece_moves(move_list, R + offset, pieces[R + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
+    generate_piece_moves(move_list, Q + offset, pieces[Q + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
     generate_piece_moves(move_list, K + offset, pieces[K + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
 
     generate_castling_moves(move_list, occupancy, side_to_move, castle_rights);
