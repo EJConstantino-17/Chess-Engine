@@ -28,6 +28,8 @@ typedef uint64_t Bitboard;
 #define BK_PATH ((1ULL << F8) | (1ULL << G8))
 #define BQ_PATH ((1ULL << D8) | (1ULL << C8) | (1ULL << B8))
 
+#define NO_SQUARE -1
+
 enum {
     P, N, B, R, Q, K,
     p, n, b, r, q, k

@@ -44,4 +44,12 @@ struct MoveList {
 
 void add_move(MoveList *move_list, Move move);
 
+typedef struct {
+    int ep_square;
+    int castle_rights;
+    int captured_piece;
+} BoardState;
+
+int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3], int *side_to_move, int *ep_square, int *castle_rights);
+
 #endif

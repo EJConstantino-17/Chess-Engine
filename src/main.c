@@ -1,6 +1,46 @@
-#include <stdio.h>
 #include "moves.h"
 #include "magic.h"
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+#include <time.h>
+
+uint64_t perft(int depth, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_square, int castle_rights) {
+    if (depth == 0) return 1ULL;
+
+    uint64_t nodes = 0;
+    MoveList move_list;
+    generate_all_moves(&move_list, pieces, occupancy, side_to_move, ep_square, castle_rights);
+
+    for (int i = 0; i < move_list.count; i++) {
+        Bitboard pieces_copy[12];
+        Bitboard occ_copy[3];
+        memcpy(pieces_copy, pieces, sizeof(pieces_copy));
+        memcpy(occ_copy, occupancy, sizeof(occ_copy));
+        int side_copy = side_to_move;
+        int ep_copy = ep_square;
+        int castle_copy = castle_rights;
+
+        if (!make_move(move_list.moves[i], pieces, occupancy, &side_to_move, &ep_square, &castle_rights)) {
+            memcpy(pieces, pieces_copy, sizeof(pieces_copy));
+            memcpy(occupancy, occ_copy, sizeof(occ_copy));
+            side_to_move = side_copy;
+            ep_square = ep_copy;
+            castle_rights = castle_copy;
+            continue;
+        }
+
+        nodes += perft(depth - 1, pieces, occupancy, side_to_move, ep_square, castle_rights);
+
+        memcpy(pieces, pieces_copy, sizeof(pieces_copy));
+        memcpy(occupancy, occ_copy, sizeof(occ_copy));
+        side_to_move = side_copy;
+        ep_square = ep_copy;
+        castle_rights = castle_copy;
+    }
+
+    return nodes;
+}
 
 int main(void) {
     Bitboard pieces[12] = {0};
@@ -18,45 +58,21 @@ int main(void) {
     int castle_rights = 15;
     generate_all_moves(&move_list, pieces, occupancy, WHITE, ep_sq, castle_rights);
 
-    printf("Total pseudo-legal moves for WHITE: %d\n", move_list.count);
+    clock_t start_time, end_time;
+    double total_time;
 
-    for (int i = 0; i < move_list.count; i++) {
-        Move m = move_list.moves[i];
-        printf("Move %2d: Src=%2d, Target=%2d, Piece=%2d, DoublePush=%d, Castling=%2d\n",
-               i + 1, MOVE_SRC(m), MOVE_TARGET(m), MOVE_PIECE(m), MOVE_IS_DOUBLE(m), MOVE_IS_CASTLING(m));
+    printf("RUNNING SPRINT 1 PERFT TEST\n");
+
+    start_time = clock();
+    for (int depth = 1; depth <= 6; depth++) {
+        uint64_t nodes = perft(depth, pieces, occupancy, WHITE, NO_SQUARE, 15);
+        printf("Depth %d: %" PRIu64 " leaf nodes\n", depth, nodes);
     }
+    end_time = clock();
 
-    fflush(stdout);
-
-    printf("TESTING BISHOP AT E4 WITH BLOCKERS\n");
-    Bitboard test_occupancy = (1ULL << F5) | (1ULL << D3);
+    total_time = ((double)(end_time - start_time)) / CLOCKS_PER_SEC;
     
-    Bitboard b_attacks = get_bishop_attacks(E4, test_occupancy);
-    print_bitboard(b_attacks);
-
-    printf("\nTESTING ROOK AT E4 WITH BLOCKERS\n");
-    test_occupancy = (1ULL << E6) | (1ULL << C4);
-    
-    Bitboard r_attacks = get_rook_attacks(E4, test_occupancy);
-    print_bitboard(r_attacks);
-
-    printf("\nTESTING QUEEN AT E4 WITH BLOCKERS\n");
-    test_occupancy = (1ULL << E6) | (1ULL << C4) | (1ULL << F5) | (1ULL << D3);
-    
-    Bitboard q_attacks = get_queen_attacks(E4, test_occupancy);
-    print_bitboard(q_attacks);
-
-    printf("MY BLOCKERS MASK\n");
-    print_bitboard(test_occupancy);
-
-    printf("ON THE FLY RESULT\n");
-    print_bitboard(bishop_attacks_on_the_fly(E4, test_occupancy));
-
-    printf("MAGIC LOOKUP RESULT\n");
-    print_bitboard(get_bishop_attacks(E4, test_occupancy));
-
-    print_bitboard(occupancy[BOTH]);
-
+    printf("Time: %.4fs", total_time);
 
     return 0;
 }
