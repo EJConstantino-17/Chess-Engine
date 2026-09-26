@@ -1,0 +1,10 @@
+# Executables
+*.exe
+main
+
+# Object files
+src/*.o
+
+# VS Code / IDE configs (optional)
+.vscode/
+.idea/
