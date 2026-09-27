@@ -37,6 +37,18 @@ typedef uint32_t Move;
 #define MOVE_IS_EP(move)        (((move) >> 22) & 0x01)
 #define MOVE_IS_CASTLING(move)  (((move) >> 23) & 0x01)
 
+#define NO_PIECE -1
+#define MAX_PLY  256
+
+typedef struct {
+    Move  move;
+    int   captured_piece; // piece index (0-11) or NO_PIECE
+    int   ep_square;
+    int   castle_rights;
+} UndoState;
+
+extern UndoState undo_stack[MAX_PLY];
+
 typedef struct {
     Move moves[256];
     int count;
@@ -69,7 +81,8 @@ void generate_all_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occup
 
 int is_square_attacked(int sq, Bitboard pieces[12], Bitboard occupancy[3], int attacker_side);
 
-// Make / Unmake move
-int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3], int *side_to_move, int *ep_square, int *castle_rights);
+// Make / Unmake move (ply is the current search depth index into undo_stack)
+int  make_move  (Move move, Bitboard pieces[12], Bitboard occupancy[3], int *side_to_move, int *ep_square, int *castle_rights, int ply);
+void unmake_move(Move move, Bitboard pieces[12], Bitboard occupancy[3], int *side_to_move, int *ep_square, int *castle_rights, int ply);
 
 #endif // MOVEGEN_H
