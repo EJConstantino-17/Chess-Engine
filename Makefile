@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -O3 -march=native -flto -Iinc -D_GNU_SOURCE
 
-SRCS = src/main.c src/bitboard.c src/magic.c src/movegen.c src/perft.c
+SRCS = src/main.c src/bitboard.c src/magic.c src/movegen.c src/perft.c src/eval.c src/search.c
 OBJS = $(SRCS:.c=.o)
 TARGET = main
 

@@ -26,7 +26,9 @@
 
 // Board initialization and printing utilities
 void init_board(Bitboard pieces[12], Bitboard occupancy[3]);
+void print_board(Bitboard pieces[12]);
 void print_bitboard(Bitboard bitboard);
+void parse_fen(const char *fen, Bitboard pieces[12], Bitboard occupancy[3], int *side_to_move, int *ep_square, int *castle_rights);
 
 // Bit scanning and manipulation utilities
 static inline int get_lsb_index(Bitboard bitboard) {
