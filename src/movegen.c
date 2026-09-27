@@ -9,9 +9,7 @@ void add_move(MoveList *move_list, Move move) {
     move_list->count++;
 }
 
-// ---------------------------------------------------------------------------
 // Pawn push helpers
-// ---------------------------------------------------------------------------
 
 Bitboard get_white_single_pushes(Bitboard wpawns, Bitboard occupied) {
     return (wpawns << 8) & ~occupied;
@@ -34,9 +32,7 @@ Bitboard get_white_pawn_attack_east(Bitboard wpawns) { return (wpawns & NOT_H_FI
 Bitboard get_black_pawn_attack_west(Bitboard bpawns) { return (bpawns & NOT_A_FILE) >> 9; }
 Bitboard get_black_pawn_attack_east(Bitboard bpawns) { return (bpawns & NOT_H_FILE) >> 7; }
 
-// ---------------------------------------------------------------------------
 // Leaper attack masks
-// ---------------------------------------------------------------------------
 
 static Bitboard mask_knight_attacks(int sq) {
     Bitboard bb = (1ULL << sq);
@@ -92,9 +88,7 @@ void init_leaper_attacks(void) {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Move generation
-// ---------------------------------------------------------------------------
 
 void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq) {
     if (side_to_move == WHITE) {
@@ -294,9 +288,7 @@ int is_square_attacked(int sq, Bitboard pieces[12], Bitboard occupancy[3], int a
     return 0;
 }
 
-// ---------------------------------------------------------------------------
 // Castling rights update table
-// ---------------------------------------------------------------------------
 
 static const int castling_rights_update[64] = {
     13, 15, 15, 15, 12, 15, 15, 14,
@@ -308,11 +300,6 @@ static const int castling_rights_update[64] = {
     15, 15, 15, 15, 15, 15, 15, 15,
      7, 15, 15, 15,  3, 15, 15, 11
 };
-
-// ---------------------------------------------------------------------------
-// make_move  — saves undo info into undo_stack[ply], applies move, returns
-//              1 if legal, 0 if the king is left in check (board is restored).
-// ---------------------------------------------------------------------------
 
 int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
               int *side_to_move, int *ep_square, int *castle_rights, int ply) {
@@ -329,19 +316,12 @@ int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
     int own_side   = *side_to_move;
     int enemy_side = own_side ^ 1;   // WHITE^1=BLACK, BLACK^1=WHITE
 
-    // ------------------------------------------------------------------
-    // 1. Save irreversible state BEFORE modifying anything
-    // ------------------------------------------------------------------
+    // Save irreversible state BEFORE modifying anything
     undo_stack[ply].move          = move;
     undo_stack[ply].ep_square     = *ep_square;
     undo_stack[ply].castle_rights = *castle_rights;
     undo_stack[ply].captured_piece = NO_PIECE;
 
-    // ------------------------------------------------------------------
-    // 2. Identify and clear captured piece BEFORE landing the moving piece
-    //    (prevents bitboard corruption when e.g. pieces[R] and pieces[r]
-    //     would momentarily share the same bit)
-    // ------------------------------------------------------------------
     if (capture && !en_passant) {
         int start_p = (enemy_side == WHITE) ? P : p;
         int end_p   = (enemy_side == WHITE) ? K : k;
@@ -354,15 +334,11 @@ int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
         }
     }
 
-    // ------------------------------------------------------------------
-    // 3. Move the piece (src -> target)
-    // ------------------------------------------------------------------
+    // Move the piece (src -> target)
     CLEAR_BIT(pieces[piece], src);
     SET_BIT(pieces[piece], target);
 
-    // ------------------------------------------------------------------
-    // 4. En passant capture — remove the captured pawn
-    // ------------------------------------------------------------------
+    // En passant capture — remove the captured pawn
     if (en_passant) {
         int ep_pawn_sq = (own_side == WHITE) ? (target - 8) : (target + 8);
         int enemy_pawn = (own_side == WHITE) ? p : P;
@@ -370,17 +346,13 @@ int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
         CLEAR_BIT(pieces[enemy_pawn], ep_pawn_sq);
     }
 
-    // ------------------------------------------------------------------
-    // 5. Promotion — replace pawn with promoted piece
-    // ------------------------------------------------------------------
+    // Promotion — replace pawn with promoted piece
     if (promoted) {
         CLEAR_BIT(pieces[piece], target);
         SET_BIT(pieces[promoted], target);
     }
 
-    // ------------------------------------------------------------------
-    // 6. Castling — move the rook
-    // ------------------------------------------------------------------
+    // Castling — move the rook
     if (castle) {
         switch (target) {
             case G1: CLEAR_BIT(pieces[R], H1); SET_BIT(pieces[R], F1); break;
@@ -390,9 +362,7 @@ int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
         }
     }
 
-    // ------------------------------------------------------------------
-    // 7. Update castling rights and en-passant square
-    // ------------------------------------------------------------------
+    // Update castling rights and en-passant square
     *castle_rights &= castling_rights_update[src];
     *castle_rights &= castling_rights_update[target];
 
@@ -401,16 +371,12 @@ int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
         *ep_square = (own_side == WHITE) ? (target - 8) : (target + 8);
     }
 
-    // ------------------------------------------------------------------
-    // 8. Recalculate occupancy
-    // ------------------------------------------------------------------
+    // Recalculate occupancy
     occupancy[WHITE] = pieces[P] | pieces[N] | pieces[B] | pieces[R] | pieces[Q] | pieces[K];
     occupancy[BLACK] = pieces[p] | pieces[n] | pieces[b] | pieces[r] | pieces[q] | pieces[k];
     occupancy[BOTH]  = occupancy[WHITE] | occupancy[BLACK];
 
-    // ------------------------------------------------------------------
-    // 9. Legality check — if own king is in check, unmake and return 0
-    // ------------------------------------------------------------------
+    // Legality check — if own king is in check, unmake and return 0
     int own_king = (own_side == WHITE) ? K : k;
     int king_sq  = get_lsb_index(pieces[own_king]);
 
@@ -419,16 +385,10 @@ int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
         return 0;
     }
 
-    // ------------------------------------------------------------------
-    // 10. Legal move — switch side
-    // ------------------------------------------------------------------
+    // Legal move — switch side
     *side_to_move = enemy_side;
     return 1;
 }
-
-// ---------------------------------------------------------------------------
-// unmake_move — restores the board from undo_stack[ply]
-// ---------------------------------------------------------------------------
 
 void unmake_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
                  int *side_to_move, int *ep_square, int *castle_rights, int ply) {
@@ -447,23 +407,17 @@ void unmake_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
 
     int own_side = (piece <= K) ? WHITE : BLACK;   // mover's color
 
-    // ------------------------------------------------------------------
-    // 1. Undo promotion — restore pawn on target
-    // ------------------------------------------------------------------
+    // Undo promotion — restore pawn on target
     if (promoted) {
         CLEAR_BIT(pieces[promoted], target);
         SET_BIT(pieces[piece], target);    // put pawn back at target
     }
 
-    // ------------------------------------------------------------------
-    // 2. Move piece back (target -> src)
-    // ------------------------------------------------------------------
+    // Move piece back (target -> src)
     CLEAR_BIT(pieces[piece], target);
     SET_BIT(pieces[piece], src);
 
-    // ------------------------------------------------------------------
-    // 3. Restore captured piece
-    // ------------------------------------------------------------------
+    // Restore captured piece
     int cap = undo_stack[ply].captured_piece;
     if (cap != NO_PIECE) {
         if (en_passant) {
@@ -475,9 +429,7 @@ void unmake_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
         }
     }
 
-    // ------------------------------------------------------------------
-    // 4. Undo castling rook move
-    // ------------------------------------------------------------------
+    // Undo castling rook move
     if (castle) {
         switch (target) {
             case G1: CLEAR_BIT(pieces[R], F1); SET_BIT(pieces[R], H1); break;
@@ -487,16 +439,12 @@ void unmake_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
         }
     }
 
-    // ------------------------------------------------------------------
-    // 5. Restore irreversible state from undo stack
-    // ------------------------------------------------------------------
+    // Restore irreversible state from undo stack
     *ep_square     = undo_stack[ply].ep_square;
     *castle_rights = undo_stack[ply].castle_rights;
     *side_to_move  = own_side;   // restore mover's side
 
-    // ------------------------------------------------------------------
-    // 6. Recalculate occupancy
-    // ------------------------------------------------------------------
+    // Recalculate occupancy
     occupancy[WHITE] = pieces[P] | pieces[N] | pieces[B] | pieces[R] | pieces[Q] | pieces[K];
     occupancy[BLACK] = pieces[p] | pieces[n] | pieces[b] | pieces[r] | pieces[q] | pieces[k];
     occupancy[BOTH]  = occupancy[WHITE] | occupancy[BLACK];
