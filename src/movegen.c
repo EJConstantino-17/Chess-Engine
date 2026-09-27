@@ -1,6 +1,10 @@
 #include "movegen.h"
-#include "moves.h"
 #include "magic.h"
+
+void add_move(MoveList *move_list, Move move) {
+    move_list->moves[move_list->count] = move;
+    move_list->count++;
+}
 
 Bitboard get_white_single_pushes(Bitboard wpawns, Bitboard occupied) {
     return (wpawns << 8) & ~occupied;
@@ -51,14 +55,6 @@ Bitboard mask_knight_attacks(int sq) {
     return attacks;
 }
 
-Bitboard knight_attacks[64];
-
-void init_knight_attacks(void) {
-    for (int sq = 0; sq < 64; sq++) {
-        knight_attacks[sq] = mask_knight_attacks(sq);
-    }
-}
-
 Bitboard mask_king_attacks(int sq) {
     Bitboard bitboard = (1ULL << sq);
     Bitboard attacks = 0ULL;
@@ -77,14 +73,6 @@ Bitboard mask_king_attacks(int sq) {
     return attacks;
 }
 
-Bitboard king_attacks[64];
-
-void init_king_attacks(void) {
-    for (int sq = 0; sq < 64; sq++) {
-        king_attacks[sq] = mask_king_attacks(sq);
-    }
-}
-
 Bitboard mask_pawn_attacks(int side, int sq) {
     Bitboard bitboard = (1ULL << sq);
     Bitboard attacks = 0ULL;
@@ -101,30 +89,16 @@ Bitboard mask_pawn_attacks(int side, int sq) {
 }
 
 Bitboard pawn_attacks[2][64];
+Bitboard knight_attacks[64];
+Bitboard king_attacks[64];
 
-void init_pawn_attacks(void) {
+void init_leaper_attacks(void) {
     for (int sq = 0; sq < 64; sq++) {
         pawn_attacks[WHITE][sq] = mask_pawn_attacks(WHITE, sq);
         pawn_attacks[BLACK][sq] = mask_pawn_attacks(BLACK, sq);
+        knight_attacks[sq] = mask_knight_attacks(sq);
+        king_attacks[sq] = mask_king_attacks(sq);
     }
-}
-
-Bitboard get_bishop_attacks(int sq, Bitboard occupancy) {
-    occupancy &= bishop_magics[sq].mask;
-    occupancy *= bishop_magics[sq].magic;
-    occupancy >>= bishop_magics[sq].shift;
-    return bishop_magics[sq].attacks[occupancy];
-}
-
-Bitboard get_rook_attacks(int sq, Bitboard occupancy) {
-    occupancy &= rook_magics[sq].mask;
-    occupancy *= rook_magics[sq].magic;
-    occupancy >>= rook_magics[sq].shift;
-    return rook_magics[sq].attacks[occupancy];
-}
-
-Bitboard get_queen_attacks(int sq, Bitboard occupancy) {
-    return get_bishop_attacks(sq, occupancy) | get_rook_attacks(sq, occupancy);
 }
 
 void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq) {

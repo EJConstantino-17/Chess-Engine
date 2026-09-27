@@ -1,4 +1,4 @@
-#include "moves.h"
+#include "movegen.h"
 #include "magic.h"
 #include <stdio.h>
 #include <stdint.h>
@@ -47,9 +47,7 @@ int main(void) {
     Bitboard occupancy[3] = {0};
 
     init_board(pieces, occupancy);
-    init_king_attacks();
-    init_knight_attacks();
-    init_pawn_attacks();
+    init_leaper_attacks();
     init_sliders_attacks();
 
     MoveList move_list;

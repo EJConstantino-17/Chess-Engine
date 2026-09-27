@@ -1,6 +1,5 @@
 #include "bitboard.h"
 #include "magic.h"
-#include "movegen.h"
 
 static Bitboard bishop_attack_table[5248];
 static Bitboard rook_attack_table[102400];
@@ -179,4 +178,22 @@ void init_sliders_attacks(void) {
         }
         rook_ptr += rook_occupancy_indices;
     }
+}
+
+Bitboard get_bishop_attacks(int sq, Bitboard occupancy) {
+    occupancy &= bishop_magics[sq].mask;
+    occupancy *= bishop_magics[sq].magic;
+    occupancy >>= bishop_magics[sq].shift;
+    return bishop_magics[sq].attacks[occupancy];
+}
+
+Bitboard get_rook_attacks(int sq, Bitboard occupancy) {
+    occupancy &= rook_magics[sq].mask;
+    occupancy *= rook_magics[sq].magic;
+    occupancy >>= rook_magics[sq].shift;
+    return rook_magics[sq].attacks[occupancy];
+}
+
+Bitboard get_queen_attacks(int sq, Bitboard occupancy) {
+    return get_bishop_attacks(sq, occupancy) | get_rook_attacks(sq, occupancy);
 }
