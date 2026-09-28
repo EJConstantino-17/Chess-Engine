@@ -8,3 +8,6 @@ src/*.o
 # VS Code / IDE configs
 .vscode/
 .idea/
+
+game_loop.c
+game_loop.h

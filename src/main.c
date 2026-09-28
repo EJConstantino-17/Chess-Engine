@@ -45,18 +45,21 @@ int main(void) {
     int side_to_move = WHITE;
     int ep_square = NO_SQUARE;
     int castle_rights = 15;
-    char best_move_str[5];
     init_board_main();
 
-    const char *fen = "7k/3r3p/1q3P2/p1p1p1Q1/P1P5/8/5PPP/4b1K1 w - - 0 35";
+    // char best_move_str[5];
+
+    // const char *fen = "3r2k1/5p1p/1b4p1/4P3/2ppBP2/1b4P1/1B2P1KP/2R5 b - - 0 1";
+    const char *fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0";
 
     parse_fen(fen, pieces, occupancy, &side_to_move, &ep_square, &castle_rights);
 
     print_board(pieces);
 
-    Move best = search_best_move(pieces, occupancy, side_to_move, ep_square, castle_rights, 7);
-    move_to_uci(MOVE_SRC(best), MOVE_TARGET(best), best_move_str);
-    printf("Best Move Found: %s\n", best_move_str);
+    // Move best = search_best_move(pieces, occupancy, side_to_move, ep_square, castle_rights, 7);
+    // move_to_uci(MOVE_SRC(best), MOVE_TARGET(best), best_move_str);
+    // printf("Best Move Found: %s\n", best_move_str);
+
 
     return 0;
 }

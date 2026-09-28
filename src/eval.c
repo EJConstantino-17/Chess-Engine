@@ -3,7 +3,7 @@
 #define FLIP(sq) ((sq) ^ 56)
 #define OTHER(side) ((side) ^ 1)
 
-static int mg_value[6] ={ 82, 337, 365, 477, 1025, 0};
+const int mg_value[6] ={ 82, 337, 365, 477, 1025, 0};
 static int eg_value[6] ={ 94, 281, 297, 512, 936, 0};
 
 static int mg_pawn_table[64] = {
