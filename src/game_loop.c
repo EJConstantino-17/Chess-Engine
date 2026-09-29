@@ -1,6 +1,6 @@
 
-#include "game_loop.h"
-#include "search.h"
+#include "../inc/game_loop.h"
+#include "../inc/search.h"
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>

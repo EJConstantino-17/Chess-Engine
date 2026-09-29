@@ -1,8 +1,8 @@
 // independent FEN search mode, with explicit resource limits and
 // expected-UCI-move checking. No opening book is consulted.
-#include "puzzle.h"
-#include "search.h"
-#include "tt.h"
+#include "../inc/puzzle.h"
+#include "../inc/search.h"
+#include "../inc/tt.h"
 #include <ctype.h>
 #include <errno.h>
 #include <inttypes.h>

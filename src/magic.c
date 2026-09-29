@@ -1,5 +1,5 @@
-#include "bitboard.h"
-#include "magic.h"
+#include "../inc/bitboard.h"
+#include "../inc/magic.h"
 #include <stddef.h>
 
 static Bitboard bishop_attack_table[5248];

@@ -1,9 +1,9 @@
 // text protocol shared by UCI GUIs. Keep stdout free of game-loop text.
-#include "uci.h"
-#include "search.h"
-#include "game_loop.h"
-#include "tt.h"
-#include "opening_book.h"
+#include "../inc/uci.h"
+#include "../inc/search.h"
+#include "../inc/game_loop.h"
+#include "../inc/tt.h"
+#include "../inc/opening_book.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

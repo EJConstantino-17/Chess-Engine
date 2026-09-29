@@ -11,20 +11,26 @@ mingw32-make clean
 mingw32-make
 ```
 
-The engine target must compile all `src/*.c`, including `src/puzzle.c`, and link them into `main.exe`. Keep `tools/build_book.c` and `tests/engine_diagnostics.c` out of the engine target: each has its own `main()`. Without a Makefile, build directly:
+The engine target must compile all `src/*.c`, including `src/puzzle.c`, and link them into `cce_engine.exe`. Keep `tools/build_book.c` and `tests/engine_diagnostics.c` out of the engine target: each has its own `main()`. Without a Makefile, build directly:
 
 ```powershell
-gcc -O3 -std=c11 -Iinc src\*.c -o main.exe
+gcc -O3 -std=c11 -Iinc src\*.c -o cce_engine.exe
 ```
 
-On Linux/macOS, use `make clean && make` if a compatible Makefile is supplied, or `cc -O3 -std=c11 -Iinc src/*.c -o main`. Replace `main.exe` with `./main` in the examples below. Close running engine processes before replacing their executable on Windows. Keep matching versions of all `src` and `inc` files together.
+or in linux/termux:
+
+```powershell
+clang -O3 -Wall src/*.c -o cce_engine
+```
+
+On Linux/macOS, use `make clean && make` if a compatible Makefile is supplied, or `cc -O3 -std=c11 -Iinc src/*.c -o cce_engine`. Replace `cce_engine.exe` with `./cce_engine` in the examples below. Close running engine processes before replacing their executable on Windows. Keep matching versions of all `src` and `inc` files together.
 
 ## Run as a UCI engine
 
-Launch `main.exe` **without arguments** in a UCI GUI such as Cute Chess, or use `--uci`. Set protocol to UCI and working directory to the project root if your GUI allows it. This is a console engine, so a GUI supplies the board. To inspect the protocol yourself:
+Launch `cce_engine.exe` **without arguments** in a UCI GUI such as Cute Chess, or use `--uci`. Set protocol to UCI and working directory to the project root if your GUI allows it. This is a console engine, so a GUI supplies the board. To inspect the protocol yourself:
 
 ```powershell
-.\main.exe --uci
+.\cce_engine.exe --uci
 ```
 
 Once it starts, enter these lines into its standard input (not at the PowerShell prompt):
@@ -55,10 +61,10 @@ setoption name Clear Hash
 ## Play in the terminal
 
 ```powershell
-.\main.exe --play
-.\main.exe --play --color white --depth 15 --time-ms 5000 --nodes 10000000
-.\main.exe --play --color black
-.\main.exe --play --help
+.\cce_engine.exe --play
+.\cce_engine.exe --play --color white --depth 15 --time-ms 5000 --nodes 10000000
+.\cce_engine.exe --play --color black
+.\cce_engine.exe --play --help
 ```
 
 `--color` selects **your** color. The default is `black` (engine plays White). Enter your moves in UCI format at the prompt; enter `quit` to end the game. Per engine turn, the defaults are maximum depth 11, 2000 CPU milliseconds, and 5,000,000 nodes. `--time-ms 0` or `--nodes 0` removes the corresponding limit. A requested maximum depth need not be reached if another limit is met. Terminal play uses the search engine without the UCI opening-book selection.
@@ -66,8 +72,8 @@ setoption name Clear Hash
 ## Solve a FEN puzzle
 
 ```powershell
-.\main.exe --puzzle '8/1N2N3/2r5/3qp2R/QP2kp1K/5R2/6B1/6B1 w - - 0 1' --depth 30 --expect a4a8
-.\main.exe --puzzle --fen '7k/8/5KQ1/8/8/8/8/8 w - - 0 1' --depth 10 --expect g6g7
+.\cce_engine.exe --puzzle '8/1N2N3/2r5/3qp2R/QP2kp1K/5R2/6B1/6B1 w - - 0 1' --depth 30 --expect a4a8
+.\cce_engine.exe --puzzle --fen '7k/8/5KQ1/8/8/8/8/8 w - - 0 1' --depth 10 --expect g6g7
 ```
 
 Use double quotes instead of single quotes around FEN in CMD. Defaults are depth 15, 5000 CPU milliseconds, and 10,000,000 nodes. Override with `--depth N`, `--time-ms MS`, and `--nodes N`; zero removes a time/node cap. `--expect` checks one UCI move and prints PASS or FAIL. Exit codes are 0 for a match or a run without `--expect`, 1 for a mismatch, and 2 for invalid input. Output includes best move, score, completed depth, nodes, and singular-extension counters. A mate search can finish before the requested depth once it has verified the reported mate distance. This mode reads **one FEN**, not a Lichess puzzle CSV. For a Lichess puzzle row, play the first move in its `Moves` field on the row's FEN to obtain the position in which the solver is to move.
@@ -100,8 +106,8 @@ gcc -O2 -std=c11 -Iinc tests\engine_diagnostics.c src\bitboard.c src\eval.c src\
 .\engine_diagnostics.exe --quick --depth 7
 .\engine_diagnostics.exe --pruning --depth 8
 .\engine_diagnostics.exe --singular --stress --depth 15
-python tests\uci_smoke.py .\main.exe
-python tests\book_index_test.py .\main.exe .\build_book.exe
+python tests\uci_smoke.py .\cce_engine.exe
+python tests\book_index_test.py .\cce_engine.exe .\build_book.exe
 ```
 
 The harness checks move and board restoration, perft, draw rules, and mate ordering before benchmarking. `--quick` is the default; `--stress` raises per-run budgets. `--pruning` compares selective pruning settings; `--singular` compares singular extensions off/on. `--depth N` sets the target (a `*` means the run stopped early). `--benchmark-only` skips the correctness checks when timing successive runs; run the checks at least once before using it. Benchmarks and puzzle results alone are **not an Elo rating**.

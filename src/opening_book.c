@@ -1,7 +1,7 @@
-#include "opening_book.h"
-#include "game_loop.h"
-#include "tt.h"
-#include "book_index.h"
+#include "../inc/opening_book.h"
+#include "../inc/game_loop.h"
+#include "../inc/tt.h"
+#include "../inc/book_index.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>

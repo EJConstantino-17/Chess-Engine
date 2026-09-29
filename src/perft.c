@@ -1,5 +1,5 @@
-#include "bitboard.h"
-#include "movegen.h"
+#include "../inc/bitboard.h"
+#include "../inc/movegen.h"
 #include <stdio.h>
 #include <time.h>
 

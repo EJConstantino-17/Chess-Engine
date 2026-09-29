@@ -1,5 +1,5 @@
-#include "movegen.h"
-#include "magic.h"
+#include "../inc/movegen.h"
+#include "../inc/magic.h"
 
 // Global undo stack (indexed by ply)
 UndoState undo_stack[MAX_PLY];

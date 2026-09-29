@@ -1,7 +1,7 @@
-#include "eval.h"
-#include "movegen.h"
-#include "../inc/search.h" // resolve the canonical header via the compiler include path.
-#include "tt.h"
+#include "../inc/eval.h"
+#include "../inc/movegen.h"
+#include "../inc/search.h"
+#include "../inc/tt.h"
 #include <string.h>
 #include <stdio.h>
 #include <time.h>

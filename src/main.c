@@ -1,18 +1,18 @@
-#include "eval.h"
-#include "magic.h"
-#include "movegen.h"
-#include "perft.h"
+#include "../inc/eval.h"
+#include "../inc/magic.h"
+#include "../inc/movegen.h"
+#include "../inc/perft.h"
 #include "../inc/search.h"
-#include "tt.h"
+#include "../inc/tt.h"
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include "game_loop.h"
-#include "uci.h"
-#include "puzzle.h"
+#include "../inc/game_loop.h"
+#include "../inc/uci.h"
+#include "../inc/puzzle.h"
 
 void reset_board(Bitboard pieces[12], Bitboard occupancy[3]) {
     memset(pieces, 0, sizeof(Bitboard) * 12);

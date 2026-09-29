@@ -1,4 +1,4 @@
-#include "tt.h"
+#include "../inc/tt.h"
 #include "../inc/search.h"
 #include <inttypes.h>
 #include <stdlib.h>

@@ -1,4 +1,4 @@
-#include "eval.h"
+#include "../inc/eval.h"
 
 #define FLIP(sq) ((sq) ^ 56)
 #define OTHER(side) ((side) ^ 1)
