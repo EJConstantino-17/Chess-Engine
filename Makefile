@@ -1,9 +1,9 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -O3 -march=native -flto -Iinc -D_GNU_SOURCE
 
-SRCS = src/main.c src/bitboard.c src/magic.c src/movegen.c src/perft.c src/eval.c src/search.c
+SRCS = src/main.c src/bitboard.c src/magic.c src/movegen.c src/perft.c src/eval.c src/search.c src/tt.c src/game_loop.c src/uci.c src/opening_book.c src/puzzle.c
 OBJS = $(SRCS:.c=.o)
-TARGET = main
+TARGET = CCE
 
 ifeq ($(OS),Windows_NT)
     TARGET_BIN = $(TARGET).exe

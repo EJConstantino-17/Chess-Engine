@@ -5,11 +5,12 @@
 UndoState undo_stack[MAX_PLY];
 
 void add_move(MoveList *move_list, Move move) {
+    // protect the fixed move list even for malformed FEN positions.
+    if (move_list->count >= (int)(sizeof(move_list->moves) / sizeof(move_list->moves[0]))) return;
     move_list->moves[move_list->count] = move;
     move_list->count++;
 }
 
-// Pawn push helpers
 
 Bitboard get_white_single_pushes(Bitboard wpawns, Bitboard occupied) {
     return (wpawns << 8) & ~occupied;
@@ -32,7 +33,6 @@ Bitboard get_white_pawn_attack_east(Bitboard wpawns) { return (wpawns & NOT_H_FI
 Bitboard get_black_pawn_attack_west(Bitboard bpawns) { return (bpawns & NOT_A_FILE) >> 9; }
 Bitboard get_black_pawn_attack_east(Bitboard bpawns) { return (bpawns & NOT_H_FILE) >> 7; }
 
-// Leaper attack masks
 
 static Bitboard mask_knight_attacks(int sq) {
     Bitboard bb = (1ULL << sq);
@@ -88,7 +88,6 @@ void init_leaper_attacks(void) {
     }
 }
 
-// Move generation
 
 void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq) {
     if (side_to_move == WHITE) {
@@ -117,7 +116,8 @@ void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occu
                 }
             }
 
-            Bitboard attacks = pawn_attacks[WHITE][src] & occupancy[BLACK];
+            // kings are never captured; checkmate ends the game.
+            Bitboard attacks = pawn_attacks[WHITE][src] & (occupancy[BLACK] & ~pieces[k]);
             while (attacks) {
                 int target = pop_lsb(&attacks);
                 if (target >= A8 && target <= H8) {
@@ -164,7 +164,7 @@ void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occu
                 }
             }
 
-            Bitboard attacks = pawn_attacks[BLACK][src] & occupancy[WHITE];
+            Bitboard attacks = pawn_attacks[BLACK][src] & (occupancy[WHITE] & ~pieces[K]);
             while (attacks) {
                 int target = pop_lsb(&attacks);
                 if (target >= A1 && target <= H1) {
@@ -200,7 +200,8 @@ void generate_piece_moves(MoveList *move_list, int piece_type, Bitboard piece_bb
             case K: case k: attacks = king_attacks[src]; break;
         }
 
-        attacks &= ~own_occ;
+        // the excluded occupied square is the opposing king.
+        attacks &= ~own_occ & ~(both_occ & ~own_occ & ~enemy_occ);
 
         while (attacks) {
             int target = pop_lsb(&attacks);
@@ -215,21 +216,23 @@ void generate_all_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occup
 
     int own_color   = side_to_move;
     int enemy_color = (side_to_move == WHITE) ? BLACK : WHITE;
+    // keep the enemy king as a blocker but exclude it as a capture target.
+    Bitboard capturable_enemy = occupancy[enemy_color] & ~pieces[side_to_move == WHITE ? k : K];
 
     generate_pawn_moves(move_list, pieces, occupancy, side_to_move, ep_sq);
     int offset = (side_to_move == WHITE) ? 0 : 6;
-    generate_piece_moves(move_list, N + offset, pieces[N + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
-    generate_piece_moves(move_list, B + offset, pieces[B + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
-    generate_piece_moves(move_list, R + offset, pieces[R + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
-    generate_piece_moves(move_list, Q + offset, pieces[Q + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
-    generate_piece_moves(move_list, K + offset, pieces[K + offset], occupancy[own_color], occupancy[enemy_color], occupancy[BOTH]);
+    generate_piece_moves(move_list, N + offset, pieces[N + offset], occupancy[own_color], capturable_enemy, occupancy[BOTH]);
+    generate_piece_moves(move_list, B + offset, pieces[B + offset], occupancy[own_color], capturable_enemy, occupancy[BOTH]);
+    generate_piece_moves(move_list, R + offset, pieces[R + offset], occupancy[own_color], capturable_enemy, occupancy[BOTH]);
+    generate_piece_moves(move_list, Q + offset, pieces[Q + offset], occupancy[own_color], capturable_enemy, occupancy[BOTH]);
+    generate_piece_moves(move_list, K + offset, pieces[K + offset], occupancy[own_color], capturable_enemy, occupancy[BOTH]);
 
     generate_castling_moves(move_list, pieces, occupancy, side_to_move, castle_rights);
 }
 
 void generate_castling_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int castle_rights) {
     if (side_to_move == WHITE) {
-        if ((castle_rights & WK_RIGHT) && !(occupancy[BOTH] & WK_PATH)) {
+        if ((castle_rights & WK_RIGHT) && TEST_BIT(pieces[K], E1) && TEST_BIT(pieces[R], H1) && !(occupancy[BOTH] & WK_PATH)) {
             if (!is_square_attacked(E1, pieces, occupancy, BLACK) &&
                 !is_square_attacked(F1, pieces, occupancy, BLACK) &&
                 !is_square_attacked(G1, pieces, occupancy, BLACK)) {
@@ -237,7 +240,7 @@ void generate_castling_moves(MoveList *move_list, Bitboard pieces[12], Bitboard 
             }
         }
 
-        if ((castle_rights & WQ_RIGHT) && !(occupancy[BOTH] & WQ_PATH)) {
+        if ((castle_rights & WQ_RIGHT) && TEST_BIT(pieces[K], E1) && TEST_BIT(pieces[R], A1) && !(occupancy[BOTH] & WQ_PATH)) {
             if (!is_square_attacked(E1, pieces, occupancy, BLACK) &&
                 !is_square_attacked(D1, pieces, occupancy, BLACK) &&
                 !is_square_attacked(C1, pieces, occupancy, BLACK)) {
@@ -245,7 +248,7 @@ void generate_castling_moves(MoveList *move_list, Bitboard pieces[12], Bitboard 
             }
         }
     } else {
-        if ((castle_rights & BK_RIGHT) && !(occupancy[BOTH] & BK_PATH)) {
+        if ((castle_rights & BK_RIGHT) && TEST_BIT(pieces[k], E8) && TEST_BIT(pieces[r], H8) && !(occupancy[BOTH] & BK_PATH)) {
             if (!is_square_attacked(E8, pieces, occupancy, WHITE) &&
                 !is_square_attacked(F8, pieces, occupancy, WHITE) &&
                 !is_square_attacked(G8, pieces, occupancy, WHITE)) {
@@ -253,7 +256,7 @@ void generate_castling_moves(MoveList *move_list, Bitboard pieces[12], Bitboard 
             }
         }
 
-        if ((castle_rights & BQ_RIGHT) && !(occupancy[BOTH] & BQ_PATH)) {
+        if ((castle_rights & BQ_RIGHT) && TEST_BIT(pieces[k], E8) && TEST_BIT(pieces[r], A8) && !(occupancy[BOTH] & BQ_PATH)) {
             if (!is_square_attacked(E8, pieces, occupancy, WHITE) &&
                 !is_square_attacked(D8, pieces, occupancy, WHITE) &&
                 !is_square_attacked(C8, pieces, occupancy, WHITE)) {
@@ -263,32 +266,6 @@ void generate_castling_moves(MoveList *move_list, Bitboard pieces[12], Bitboard 
     }
 }
 
-int is_square_attacked(int sq, Bitboard pieces[12], Bitboard occupancy[3], int attacker_side) {
-    if (attacker_side == WHITE) {
-        if (pawn_attacks[BLACK][sq] & pieces[P]) return 1;
-    } else {
-        if (pawn_attacks[WHITE][sq] & pieces[p]) return 1;
-    }
-
-    int knight_piece = (attacker_side == WHITE) ? N : n;
-    if (knight_attacks[sq] & pieces[knight_piece]) return 1;
-
-    int king_piece = (attacker_side == WHITE) ? K : k;
-    if (king_attacks[sq] & pieces[king_piece]) return 1;
-
-    int bishop_piece = (attacker_side == WHITE) ? B : b;
-    int queen_piece  = (attacker_side == WHITE) ? Q : q;
-    Bitboard bishop_rays = get_bishop_attacks(sq, occupancy[BOTH]);
-    if (bishop_rays & (pieces[bishop_piece] | pieces[queen_piece])) return 1;
-
-    int rook_piece = (attacker_side == WHITE) ? R : r;
-    Bitboard rook_rays = get_rook_attacks(sq, occupancy[BOTH]);
-    if (rook_rays & (pieces[rook_piece] | pieces[queen_piece])) return 1;
-
-    return 0;
-}
-
-// Castling rights update table
 
 static const int castling_rights_update[64] = {
     13, 15, 15, 15, 12, 15, 15, 14,
@@ -316,7 +293,10 @@ int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
     int own_side   = *side_to_move;
     int enemy_side = own_side ^ 1;   // WHITE^1=BLACK, BLACK^1=WHITE
 
-    // Save irreversible state BEFORE modifying anything
+    // reject malformed or king-capturing moves before touching the undo stack.
+    if (piece > k || !(pieces[piece] & (1ULL << src)) ||
+        (pieces[enemy_side == WHITE ? K : k] & (1ULL << target))) return 0;
+
     undo_stack[ply].move          = move;
     undo_stack[ply].ep_square     = *ep_square;
     undo_stack[ply].castle_rights = *castle_rights;
@@ -334,11 +314,9 @@ int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
         }
     }
 
-    // Move the piece (src -> target)
     CLEAR_BIT(pieces[piece], src);
     SET_BIT(pieces[piece], target);
 
-    // En passant capture — remove the captured pawn
     if (en_passant) {
         int ep_pawn_sq = (own_side == WHITE) ? (target - 8) : (target + 8);
         int enemy_pawn = (own_side == WHITE) ? p : P;
@@ -346,13 +324,11 @@ int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
         CLEAR_BIT(pieces[enemy_pawn], ep_pawn_sq);
     }
 
-    // Promotion — replace pawn with promoted piece
     if (promoted) {
         CLEAR_BIT(pieces[piece], target);
         SET_BIT(pieces[promoted], target);
     }
 
-    // Castling — move the rook
     if (castle) {
         switch (target) {
             case G1: CLEAR_BIT(pieces[R], H1); SET_BIT(pieces[R], F1); break;
@@ -362,7 +338,6 @@ int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
         }
     }
 
-    // Update castling rights and en-passant square
     *castle_rights &= castling_rights_update[src];
     *castle_rights &= castling_rights_update[target];
 
@@ -371,12 +346,22 @@ int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
         *ep_square = (own_side == WHITE) ? (target - 8) : (target + 8);
     }
 
-    // Recalculate occupancy
-    occupancy[WHITE] = pieces[P] | pieces[N] | pieces[B] | pieces[R] | pieces[Q] | pieces[K];
-    occupancy[BLACK] = pieces[p] | pieces[n] | pieces[b] | pieces[r] | pieces[q] | pieces[k];
+    // promotions change piece type, not occupied squares.
+    // Update only the source, destination, capture, and castling rook squares.
+    occupancy[own_side] &= ~(1ULL << src);
+    occupancy[own_side] |= 1ULL << target;
+    if (capture && !en_passant && undo_stack[ply].captured_piece != NO_PIECE)
+        occupancy[enemy_side] &= ~(1ULL << target);
+    if (en_passant)
+        occupancy[enemy_side] &= ~(1ULL << (own_side == WHITE ? target - 8 : target + 8));
+    if (castle) {
+        int rook_src = target == G1 ? H1 : target == C1 ? A1 : target == G8 ? H8 : A8;
+        int rook_dst = target == G1 ? F1 : target == C1 ? D1 : target == G8 ? F8 : D8;
+        occupancy[own_side] &= ~(1ULL << rook_src);
+        occupancy[own_side] |= 1ULL << rook_dst;
+    }
     occupancy[BOTH]  = occupancy[WHITE] | occupancy[BLACK];
 
-    // Legality check — if own king is in check, unmake and return 0
     int own_king = (own_side == WHITE) ? K : k;
     int king_sq  = get_lsb_index(pieces[own_king]);
 
@@ -385,7 +370,6 @@ int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
         return 0;
     }
 
-    // Legal move — switch side
     *side_to_move = enemy_side;
     return 1;
 }
@@ -407,17 +391,14 @@ void unmake_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
 
     int own_side = (piece <= K) ? WHITE : BLACK;   // mover's color
 
-    // Undo promotion — restore pawn on target
     if (promoted) {
         CLEAR_BIT(pieces[promoted], target);
         SET_BIT(pieces[piece], target);    // put pawn back at target
     }
 
-    // Move piece back (target -> src)
     CLEAR_BIT(pieces[piece], target);
     SET_BIT(pieces[piece], src);
 
-    // Restore captured piece
     int cap = undo_stack[ply].captured_piece;
     if (cap != NO_PIECE) {
         if (en_passant) {
@@ -429,7 +410,6 @@ void unmake_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
         }
     }
 
-    // Undo castling rook move
     if (castle) {
         switch (target) {
             case G1: CLEAR_BIT(pieces[R], F1); SET_BIT(pieces[R], H1); break;
@@ -439,13 +419,21 @@ void unmake_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
         }
     }
 
-    // Restore irreversible state from undo stack
     *ep_square     = undo_stack[ply].ep_square;
     *castle_rights = undo_stack[ply].castle_rights;
     *side_to_move  = own_side;   // restore mover's side
 
-    // Recalculate occupancy
-    occupancy[WHITE] = pieces[P] | pieces[N] | pieces[B] | pieces[R] | pieces[Q] | pieces[K];
-    occupancy[BLACK] = pieces[p] | pieces[n] | pieces[b] | pieces[r] | pieces[q] | pieces[k];
+    // reverse the square changes recorded by the move.
+    occupancy[own_side] &= ~(1ULL << target);
+    occupancy[own_side] |= 1ULL << src;
+    if (cap != NO_PIECE)
+        occupancy[own_side ^ 1] |= 1ULL << (en_passant
+                          ? (own_side == WHITE ? target - 8 : target + 8) : target);
+    if (castle) {
+        int rook_src = target == G1 ? H1 : target == C1 ? A1 : target == G8 ? H8 : A8;
+        int rook_dst = target == G1 ? F1 : target == C1 ? D1 : target == G8 ? F8 : D8;
+        occupancy[own_side] &= ~(1ULL << rook_dst);
+        occupancy[own_side] |= 1ULL << rook_src;
+    }
     occupancy[BOTH]  = occupancy[WHITE] | occupancy[BLACK];
 }

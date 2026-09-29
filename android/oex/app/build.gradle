@@ -1,0 +1,14 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'org.cce.oex'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'org.cce.oex'
+        minSdk 26
+        targetSdk 28
+        versionCode 1
+        versionName '1.0'
+    }
+    // OEX exposes the executable from the installed nativeLibraryDir.
+    packaging { jniLibs { useLegacyPackaging = true; keepDebugSymbols += ['**/libcce.so'] } }
+}

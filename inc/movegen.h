@@ -79,7 +79,28 @@ void generate_piece_moves(MoveList *move_list, int piece_type, Bitboard piece_bb
 void generate_castling_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int castle_rights);
 void generate_all_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq, int castle_rights);
 
-int is_square_attacked(int sq, Bitboard pieces[12], Bitboard occupancy[3], int attacker_side);
+// header-local definition lets the compiler inline attack checks
+// during move validation and search (with LTO it may also inline magic lookups).
+static inline int is_square_attacked(int sq, Bitboard pieces[12],
+                                      Bitboard occupancy[3], int attacker_side) {
+    if (attacker_side == WHITE) {
+        if (pawn_attacks[BLACK][sq] & pieces[P]) return 1;
+    } else {
+        if (pawn_attacks[WHITE][sq] & pieces[p]) return 1;
+    }
+    int knight_piece = attacker_side == WHITE ? N : n;
+    if (knight_attacks[sq] & pieces[knight_piece]) return 1;
+    int king_piece = attacker_side == WHITE ? K : k;
+    if (king_attacks[sq] & pieces[king_piece]) return 1;
+    int bishop_piece = attacker_side == WHITE ? B : b;
+    int queen_piece = attacker_side == WHITE ? Q : q;
+    if (get_bishop_attacks(sq, occupancy[BOTH]) &
+        (pieces[bishop_piece] | pieces[queen_piece])) return 1;
+    int rook_piece = attacker_side == WHITE ? R : r;
+    if (get_rook_attacks(sq, occupancy[BOTH]) &
+        (pieces[rook_piece] | pieces[queen_piece])) return 1;
+    return 0;
+}
 
 // Make / Unmake move (ply is the current search depth index into undo_stack)
 int  make_move  (Move move, Bitboard pieces[12], Bitboard occupancy[3], int *side_to_move, int *ep_square, int *castle_rights, int ply);
