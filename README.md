@@ -17,12 +17,6 @@ The engine target must compile all `src/*.c`, including `src/puzzle.c`, and link
 gcc -O3 -std=c11 -Iinc src\*.c -o cce_engine.exe
 ```
 
-or in linux/termux:
-
-```powershell
-clang -O3 -Wall src/*.c -o cce_engine
-```
-
 On Linux/macOS, use `make clean && make` if a compatible Makefile is supplied, or `cc -O3 -std=c11 -Iinc src/*.c -o cce_engine`. Replace `cce_engine.exe` with `./cce_engine` in the examples below. Close running engine processes before replacing their executable on Windows. Keep matching versions of all `src` and `inc` files together.
 
 ## Run as a UCI engine
