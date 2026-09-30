@@ -1,6 +1,7 @@
 #include "../nnue/cce_nnue.h"
 #include "../inc/movegen.h"
 #include "../inc/magic.h"
+#include "../inc/tt.h"
 
 // Global undo stack (indexed by ply)
 UndoState undo_stack[MAX_PLY];
@@ -313,167 +314,143 @@ static const int castling_rights_update[64] = {
      7, 15, 15, 15,  3, 15, 15, 11
 };
 
-int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
-              int *side_to_move, int *ep_square, int *castle_rights, int ply) {
 
-    int src        = MOVE_SRC(move);
-    int target     = MOVE_TARGET(move);
-    int piece      = MOVE_PIECE(move);
-    int promoted   = MOVE_PROMOTED(move);
-    int capture    = MOVE_IS_CAPTURE(move);
-    int double_push= MOVE_IS_DOUBLE(move);
-    int en_passant = MOVE_IS_EP(move);
-    int castle     = MOVE_IS_CASTLING(move);
-
-    int own_side   = *side_to_move;
-    int enemy_side = own_side ^ 1;   // WHITE^1=BLACK, BLACK^1=WHITE
-
-    // reject malformed or king-capturing moves before touching the undo stack.
-    if (piece > k || !(pieces[piece] & (1ULL << src)) ||
-        (pieces[enemy_side == WHITE ? K : k] & (1ULL << target))) return 0;
-
-    // Prepare NNUE before board mutation; rejected moves do not advance it.
-    cce_nnue_prepare(move, pieces, *side_to_move, *ep_square, *castle_rights, ply);
-
-    undo_stack[ply].move          = move;
-    undo_stack[ply].ep_square     = *ep_square;
-    undo_stack[ply].castle_rights = *castle_rights;
-    undo_stack[ply].captured_piece = NO_PIECE;
-
-    if (capture && !en_passant) {
-        int start_p = (enemy_side == WHITE) ? P : p;
-        int end_p   = (enemy_side == WHITE) ? K : k;
-        for (int pt = start_p; pt <= end_p; pt++) {
-            if (TEST_BIT(pieces[pt], target)) {
-                undo_stack[ply].captured_piece = pt;
-                CLEAR_BIT(pieces[pt], target);
-                break;
-            }
+// A square toggle updates a piece, its side, BOTH, and the live hash.
+static inline void toggle_piece(Bitboard pieces[12], Bitboard occupancy[3],
+                                int piece, Bitboard squares, MoveState *state) {
+    pieces[piece] ^= squares;
+    occupancy[piece <= K ? WHITE : BLACK] ^= squares;
+    occupancy[BOTH] ^= squares;
+    if (state) {
+        while (squares) {
+            int sq = pop_lsb(&squares);
+            state->zobrist_key ^= z_pieces[piece][sq];
         }
     }
+}
 
-    CLEAR_BIT(pieces[piece], src);
-    SET_BIT(pieces[piece], target);
+void move_state_init(MoveState *state, Bitboard pieces[12], int side, int ep,
+                     int castle, uint32_t halfmove) {
+    state->zobrist_key = generate_zobrist_key(pieces, side, ep, castle);
+    state->halfmove_clock = halfmove;
+}
 
-    if (en_passant) {
-        int ep_pawn_sq = (own_side == WHITE) ? (target - 8) : (target + 8);
-        int enemy_pawn = (own_side == WHITE) ? p : P;
-        undo_stack[ply].captured_piece = enemy_pawn;
-        CLEAR_BIT(pieces[enemy_pawn], ep_pawn_sq);
+static Bitboard castle_rook_squares(int target) {
+    int from = target == G1 ? H1 : target == C1 ? A1 : target == G8 ? H8 : A8;
+    int to = target == G1 ? F1 : target == C1 ? D1 : target == G8 ? F8 : D8;
+    return (1ULL << from) | (1ULL << to);
+}
+
+int make_move_state(Move move, Bitboard pieces[12], Bitboard occupancy[3],
+                    int *side, int *ep, int *castle, int ply, MoveState *state) {
+    int src = MOVE_SRC(move), dst = MOVE_TARGET(move), piece = MOVE_PIECE(move);
+    int promoted = MOVE_PROMOTED(move), capture = MOVE_IS_CAPTURE(move);
+    int is_ep = MOVE_IS_EP(move), is_castle = MOVE_IS_CASTLING(move);
+    int us = *side, them = us ^ 1, captured = NO_PIECE;
+    int cap_sq = is_ep ? dst + (us == WHITE ? -8 : 8) : dst;
+    Bitboard from = 1ULL << src, to = 1ULL << dst;
+    // Validate XOR preconditions before changing any board or NNUE state.
+    if (ply < 0 || ply >= MAX_PLY || piece > k || src == dst ||
+        (piece <= K ? WHITE : BLACK) != us || !(pieces[piece] & from) ||
+        (occupancy[us] & to) || (pieces[them == WHITE ? K : k] & to)) return 0;
+    if (promoted && (promoted > k || (promoted <= K ? WHITE : BLACK) != us ||
+        (promoted % 6 < N || promoted % 6 > Q) || piece % 6 != P ||
+        dst / 8 != (us == WHITE ? 7 : 0))) return 0;
+    if (piece % 6 == P && dst / 8 == (us == WHITE ? 7 : 0) && !promoted) return 0;
+    if (is_ep) {
+        if (!capture || piece % 6 != P || dst != *ep || cap_sq < 0 || cap_sq >= 64 ||
+            occupancy[BOTH] & to || !(pawn_attacks[us][src] & to)) return 0;
+        captured = them == WHITE ? P : p;
+        if (!(pieces[captured] & (1ULL << cap_sq))) return 0;
+    } else if (capture) {
+        for (int pt = them == WHITE ? P : p; pt <= (them == WHITE ? Q : q); ++pt)
+            if (pieces[pt] & to) { captured = pt; break; }
+        if (captured == NO_PIECE) return 0;
+    } else if (occupancy[them] & to) return 0;
+    if (is_castle) {
+        int valid_target = us == WHITE ? (dst == G1 || dst == C1) : (dst == G8 || dst == C8);
+        int rook_from = dst == G1 ? H1 : dst == C1 ? A1 : dst == G8 ? H8 : A8;
+        int rook_to = dst == G1 ? F1 : dst == C1 ? D1 : dst == G8 ? F8 : D8;
+        int right = dst == G1 ? 1 : dst == C1 ? 2 : dst == G8 ? 4 : 8;
+        Bitboard path = dst == G1 ? ((1ULL << F1) | (1ULL << G1)) :
+                        dst == C1 ? ((1ULL << B1) | (1ULL << C1) | (1ULL << D1)) :
+                        dst == G8 ? ((1ULL << F8) | (1ULL << G8)) :
+                                    ((1ULL << B8) | (1ULL << C8) | (1ULL << D8));
+        if (!valid_target || piece != (us == WHITE ? K : k) || src != (us == WHITE ? E1 : E8) ||
+            capture || promoted || is_ep || MOVE_IS_DOUBLE(move) || !(*castle & right) ||
+            !(pieces[us == WHITE ? R : r] & (1ULL << rook_from)) || occupancy[BOTH] & path ||
+            is_square_attacked(src, pieces, occupancy, them) ||
+            is_square_attacked(rook_to, pieces, occupancy, them)) return 0;
     }
+    if (MOVE_IS_DOUBLE(move) && (piece % 6 != P || capture || promoted || is_ep ||
+        src / 8 != (us == WHITE ? 1 : 6) || dst != src + (us == WHITE ? 16 : -16) ||
+        (occupancy[BOTH] & (1ULL << (src + (us == WHITE ? 8 : -8)))))) return 0;
 
+    cce_nnue_prepare(move, pieces, us, *ep, *castle, ply);
+    UndoState *undo = &undo_stack[ply];
+    undo->captured_piece = (int8_t)captured;
+    undo->ep_square = (int8_t)*ep;
+    undo->castle_rights = (uint8_t)*castle;
+    undo->zobrist_key = state ? state->zobrist_key : 0;
+    undo->halfmove_clock = state ? state->halfmove_clock : 0;
+    if (state) state->zobrist_key ^= zobrist_ep_key(pieces, us, *ep) ^ z_castle[*castle & 15];
+
+    if (captured != NO_PIECE) toggle_piece(pieces, occupancy, captured, 1ULL << cap_sq, state);
+    toggle_piece(pieces, occupancy, piece, from | to, state);
     if (promoted) {
-        CLEAR_BIT(pieces[piece], target);
-        SET_BIT(pieces[promoted], target);
+        toggle_piece(pieces, occupancy, piece, to, state);
+        toggle_piece(pieces, occupancy, promoted, to, state);
     }
-
-    if (castle) {
-        switch (target) {
-            case G1: CLEAR_BIT(pieces[R], H1); SET_BIT(pieces[R], F1); break;
-            case C1: CLEAR_BIT(pieces[R], A1); SET_BIT(pieces[R], D1); break;
-            case G8: CLEAR_BIT(pieces[r], H8); SET_BIT(pieces[r], F8); break;
-            case C8: CLEAR_BIT(pieces[r], A8); SET_BIT(pieces[r], D8); break;
-        }
+    if (is_castle) toggle_piece(pieces, occupancy, us == WHITE ? R : r, castle_rook_squares(dst), state);
+    *castle &= castling_rights_update[src] & castling_rights_update[dst];
+    *ep = MOVE_IS_DOUBLE(move) ? dst + (us == WHITE ? -8 : 8) : NO_SQUARE;
+    *side = them;
+    if (state) {
+        state->zobrist_key ^= z_side ^ z_castle[*castle & 15] ^ zobrist_ep_key(pieces, them, *ep);
+        if (piece % 6 == P || captured != NO_PIECE) state->halfmove_clock = 0;
+        else if (state->halfmove_clock < UINT32_MAX) ++state->halfmove_clock;
     }
-
-    *castle_rights &= castling_rights_update[src];
-    *castle_rights &= castling_rights_update[target];
-
-    *ep_square = NO_SQUARE;
-    if (double_push) {
-        *ep_square = (own_side == WHITE) ? (target - 8) : (target + 8);
-    }
-
-    // promotions change piece type, not occupied squares.
-    // Update only the source, destination, capture, and castling rook squares.
-    occupancy[own_side] &= ~(1ULL << src);
-    occupancy[own_side] |= 1ULL << target;
-    if (capture && !en_passant && undo_stack[ply].captured_piece != NO_PIECE)
-        occupancy[enemy_side] &= ~(1ULL << target);
-    if (en_passant)
-        occupancy[enemy_side] &= ~(1ULL << (own_side == WHITE ? target - 8 : target + 8));
-    if (castle) {
-        int rook_src = target == G1 ? H1 : target == C1 ? A1 : target == G8 ? H8 : A8;
-        int rook_dst = target == G1 ? F1 : target == C1 ? D1 : target == G8 ? F8 : D8;
-        occupancy[own_side] &= ~(1ULL << rook_src);
-        occupancy[own_side] |= 1ULL << rook_dst;
-    }
-    occupancy[BOTH]  = occupancy[WHITE] | occupancy[BLACK];
-
-    int own_king = (own_side == WHITE) ? K : k;
-    int king_sq  = get_lsb_index(pieces[own_king]);
-
-    if (is_square_attacked(king_sq, pieces, occupancy, enemy_side)) {
-        unmake_move(move, pieces, occupancy, side_to_move, ep_square, castle_rights, ply);
+    int king_sq = get_lsb_index(pieces[us == WHITE ? K : k]);
+    if (king_sq < 0 || is_square_attacked(king_sq, pieces, occupancy, them)) {
+        unmake_move_state(move, pieces, occupancy, side, ep, castle, ply, state);
         return 0;
     }
-
     cce_nnue_commit(move, ply);
-    *side_to_move = enemy_side;
     return 1;
 }
 
-void unmake_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
-                 int *side_to_move, int *ep_square, int *castle_rights, int ply) {
+void unmake_move_state(Move move, Bitboard pieces[12], Bitboard occupancy[3],
+                       int *side, int *ep, int *castle, int ply, MoveState *state) {
     cce_nnue_unmake(move, ply);
-
-    // The side that made this move is now the *enemy* (since make_move
-    // switches side_to_move before we get here only for legal moves;
-    // for illegal moves make_move calls us before switching, so we use
-    // the stored state to be safe).
-    // We derive own_side from the move piece color directly.
-    int src        = MOVE_SRC(move);
-    int target     = MOVE_TARGET(move);
-    int piece      = MOVE_PIECE(move);
-    int promoted   = MOVE_PROMOTED(move);
-    int en_passant = MOVE_IS_EP(move);
-    int castle     = MOVE_IS_CASTLING(move);
-
-    int own_side = (piece <= K) ? WHITE : BLACK;   // mover's color
-
+    int src = MOVE_SRC(move), dst = MOVE_TARGET(move), piece = MOVE_PIECE(move);
+    int promoted = MOVE_PROMOTED(move), us = piece <= K ? WHITE : BLACK;
+    Bitboard to = 1ULL << dst;
+    const UndoState *undo = &undo_stack[ply];
+    if (MOVE_IS_CASTLING(move)) toggle_piece(pieces, occupancy, us == WHITE ? R : r, castle_rook_squares(dst), NULL);
     if (promoted) {
-        CLEAR_BIT(pieces[promoted], target);
-        SET_BIT(pieces[piece], target);    // put pawn back at target
+        toggle_piece(pieces, occupancy, promoted, to, NULL);
+        toggle_piece(pieces, occupancy, piece, to, NULL);
     }
-
-    CLEAR_BIT(pieces[piece], target);
-    SET_BIT(pieces[piece], src);
-
-    int cap = undo_stack[ply].captured_piece;
-    if (cap != NO_PIECE) {
-        if (en_passant) {
-            // EP: captured pawn is NOT on target; restore it to the right sq
-            int ep_pawn_sq = (own_side == WHITE) ? (target - 8) : (target + 8);
-            SET_BIT(pieces[cap], ep_pawn_sq);
-        } else {
-            SET_BIT(pieces[cap], target);
-        }
+    toggle_piece(pieces, occupancy, piece, (1ULL << src) | to, NULL);
+    if (undo->captured_piece != NO_PIECE) {
+        int cap_sq = MOVE_IS_EP(move) ? dst + (us == WHITE ? -8 : 8) : dst;
+        toggle_piece(pieces, occupancy, undo->captured_piece, 1ULL << cap_sq, NULL);
     }
-
-    if (castle) {
-        switch (target) {
-            case G1: CLEAR_BIT(pieces[R], F1); SET_BIT(pieces[R], H1); break;
-            case C1: CLEAR_BIT(pieces[R], D1); SET_BIT(pieces[R], A1); break;
-            case G8: CLEAR_BIT(pieces[r], F8); SET_BIT(pieces[r], H8); break;
-            case C8: CLEAR_BIT(pieces[r], D8); SET_BIT(pieces[r], A8); break;
-        }
+    *side = us;
+    *ep = undo->ep_square;
+    *castle = undo->castle_rights;
+    // Restore the exact prior hash and clock instead of rehashing the board.
+    if (state) {
+        state->zobrist_key = undo->zobrist_key;
+        state->halfmove_clock = undo->halfmove_clock;
     }
+}
 
-    *ep_square     = undo_stack[ply].ep_square;
-    *castle_rights = undo_stack[ply].castle_rights;
-    *side_to_move  = own_side;   // restore mover's side
-
-    // reverse the square changes recorded by the move.
-    occupancy[own_side] &= ~(1ULL << target);
-    occupancy[own_side] |= 1ULL << src;
-    if (cap != NO_PIECE)
-        occupancy[own_side ^ 1] |= 1ULL << (en_passant
-                          ? (own_side == WHITE ? target - 8 : target + 8) : target);
-    if (castle) {
-        int rook_src = target == G1 ? H1 : target == C1 ? A1 : target == G8 ? H8 : A8;
-        int rook_dst = target == G1 ? F1 : target == C1 ? D1 : target == G8 ? F8 : D8;
-        occupancy[own_side] &= ~(1ULL << rook_dst);
-        occupancy[own_side] |= 1ULL << rook_src;
-    }
-    occupancy[BOTH]  = occupancy[WHITE] | occupancy[BLACK];
+int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3], int *side,
+              int *ep, int *castle, int ply) {
+    return make_move_state(move, pieces, occupancy, side, ep, castle, ply, NULL);
+}
+void unmake_move(Move move, Bitboard pieces[12], Bitboard occupancy[3], int *side,
+                 int *ep, int *castle, int ply) {
+    unmake_move_state(move, pieces, occupancy, side, ep, castle, ply, NULL);
 }

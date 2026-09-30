@@ -4,6 +4,7 @@
 *.csv
 *.md
 *.ps1
+*.nnue
 !README.md
 main
 

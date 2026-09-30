@@ -17,6 +17,9 @@ typedef struct {
     uint8_t flag;
 } TT_Entry;
 
+// Shared random keys for incremental position updates.
+extern uint64_t z_pieces[12][64], z_side, z_castle[16], z_enpassant[64];
+uint64_t zobrist_ep_key(Bitboard pieces[12], int side, int ep_square);
 void init_zobrist(void);
 uint64_t generate_zobrist_key(Bitboard pieces[12], int side_to_move, int ep_square, int castle_rights);
 

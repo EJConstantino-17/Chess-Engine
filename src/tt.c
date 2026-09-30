@@ -39,19 +39,30 @@ static int has_legal_ep(Bitboard pieces[12], int side, int ep_square) {
     Bitboard candidates = pawn_attacks[side ^ 1][ep_square] & pieces[own_pawn];
     while (candidates) {
         int from = pop_lsb(&candidates);
-        Bitboard next[12];
-        memcpy(next, pieces, sizeof(next));
-        next[own_pawn] &= ~(1ULL << from);
-        next[own_pawn] |= 1ULL << ep_square;
-        next[their_pawn] &= ~(1ULL << captured_sq);
-        Bitboard occupied[3] = {0, 0, 0};
-        for (int piece = P; piece <= K; piece++) occupied[WHITE] |= next[piece];
-        for (int piece = p; piece <= k; piece++) occupied[BLACK] |= next[piece];
-        occupied[BOTH] = occupied[WHITE] | occupied[BLACK];
-        int king_sq = get_lsb_index(next[side == WHITE ? K : k]);
-        if (king_sq >= 0 && !is_square_attacked(king_sq, next, occupied, side ^ 1)) return 1;
+        // 9/30/2026 13:56: Test EP legality with virtual occupancy, without copying pieces.
+        Bitboard occupied = 0;
+        for (int pt = P; pt <= k; ++pt) occupied |= pieces[pt];
+        if (occupied & (1ULL << ep_square)) return 0;
+        occupied ^= (1ULL << from) | (1ULL << ep_square) | (1ULL << captured_sq);
+        int enemy = side ^ 1;
+        int king_sq = get_lsb_index(pieces[side == WHITE ? K : k]);
+        if (king_sq < 0) continue;
+        Bitboard enemy_pawns = pieces[their_pawn] ^ (1ULL << captured_sq);
+        if (pawn_attacks[side][king_sq] & enemy_pawns) continue;
+        if (knight_attacks[king_sq] & pieces[enemy == WHITE ? N : n]) continue;
+        if (king_attacks[king_sq] & pieces[enemy == WHITE ? K : k]) continue;
+        if (get_bishop_attacks(king_sq, occupied) &
+            (pieces[enemy == WHITE ? B : b] | pieces[enemy == WHITE ? Q : q])) continue;
+        if (get_rook_attacks(king_sq, occupied) &
+            (pieces[enemy == WHITE ? R : r] | pieces[enemy == WHITE ? Q : q])) continue;
+        return 1;
     }
     return 0;
+}
+
+// 9/30/2026 13:56: Preserve legal-EP repetition semantics in incremental hashes.
+uint64_t zobrist_ep_key(Bitboard pieces[12], int side, int ep_square) {
+    return has_legal_ep(pieces, side, ep_square) ? z_enpassant[ep_square] : 0;
 }
 
 void init_zobrist(void) {

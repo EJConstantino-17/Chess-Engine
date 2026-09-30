@@ -142,3 +142,5 @@ For consistent results, compare completed depths and use the same executable, ti
 ## NNUE licensing
 
 The NNUE-enabled executable incorporates GPLv3-or-later Stockfish source. Preserve the upstream authors and license notices, distribute under compatible GPLv3 terms, and provide corresponding source. See [upstream provenance](nnue/stockfish/UPSTREAM.md).
+
+Move-state API and a pure C ply-stack example: [STATE_UPDATES.md](STATE_UPDATES.md).

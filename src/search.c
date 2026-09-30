@@ -238,11 +238,14 @@ static void pick_next_move(MoveList *move_list, int move_index, int move_scores[
     move_scores[best_index] = temp_score;
 }
 
+// One live metadata record follows the existing single-threaded search.
+static MoveState search_position;
+
 static int quiescence(int alpha, int beta, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_square, int castle_rights, int ply, int halfmove, int null_active) {
     nodes_searched++;
     stats.qnodes++;
     if (search_stop_requested()) return 0;
-    uint64_t position_key = generate_zobrist_key(pieces, side_to_move, ep_square, castle_rights);
+    uint64_t position_key = search_position.zobrist_key;
     path_keys[ply] = position_key;
     if (!null_active && draw_rule_applies(position_key, halfmove, ply, pieces, occupancy,
                           side_to_move, ep_square, castle_rights)) return 0;
@@ -255,9 +258,9 @@ static int quiescence(int alpha, int beta, Bitboard pieces[12], Bitboard occupan
             int best = -INFINITY_SCORE;
             for (int i = 0; i < evasions.count; i++) {
                 Move m = evasions.moves[i];
-                if (make_move(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply)) {
+                if (make_move_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply, &search_position)) {
                     int score = -evaluate(pieces, occupancy, side_to_move);
-                    unmake_move(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply);
+                    unmake_move_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply, &search_position);
                     if (score > best) best = score;
                 }
             }
@@ -294,13 +297,13 @@ static int quiescence(int alpha, int beta, Bitboard pieces[12], Bitboard occupan
                             ? 0 : halfmove + 1;
 
         // make_move rolls back illegal moves itself.
-        if (!make_move(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply))
+        if (!make_move_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply, &search_position))
             continue;
         legal_moves_count++;
 
         int score = -quiescence(-beta, -alpha, pieces, occupancy, side_to_move, ep_square, castle_rights, ply + 1, next_halfmove, null_active);
 
-        unmake_move(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply);
+        unmake_move_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply, &search_position);
 
         if (aborted) return 0;
 
@@ -339,7 +342,7 @@ static int verify_singular(MoveList *moves, Move candidate, int depth,
             int next_side = side, next_ep = ep, next_castle = castle;
             int next_halfmove = (MOVE_PIECE(m) == P || MOVE_PIECE(m) == p || MOVE_IS_CAPTURE(m))
                                 ? 0 : halfmove + 1;
-            if (!make_move(m, pieces, occupancy, &next_side, &next_ep, &next_castle, ply)) continue;
+            if (!make_move_state(m, pieces, occupancy, &next_side, &next_ep, &next_castle, ply, &search_position)) continue;
             int score;
             if (pass == 0) {
                 found = 1;
@@ -353,7 +356,7 @@ static int verify_singular(MoveList *moves, Move candidate, int depth,
                                  pieces, occupancy, next_side, next_ep, next_castle,
                                  ply + 1, 0, next_halfmove, 0, 0);
             }
-            unmake_move(m, pieces, occupancy, &next_side, &next_ep, &next_castle, ply);
+            unmake_move_state(m, pieces, occupancy, &next_side, &next_ep, &next_castle, ply, &search_position);
             if (aborted) break;
             if (pass == 0 && (candidate_score > MATE_SCORE - MAX_PLY ||
                               candidate_score < -MATE_SCORE + MAX_PLY)) {
@@ -384,7 +387,7 @@ static int negamax(int alpha, int beta, int depth, Bitboard pieces[12],
 
     nodes_searched++;
     if (search_stop_requested()) return 0;
-    uint64_t position_key = generate_zobrist_key(pieces, side_to_move, ep_square, castle_rights);
+    uint64_t position_key = search_position.zobrist_key;
     path_keys[ply] = position_key;
     uint64_t hash_key = context_tt_key(position_key, halfmove, ply);
     // overlap cache lookup with draw and check work.
@@ -452,10 +455,14 @@ static int negamax(int alpha, int beta, int depth, Bitboard pieces[12],
         if (null_depth < 0) null_depth = 0;
         // Artificial null moves also advance and restore NNUE state.
         cce_nnue_null(pieces, side_to_move, ep_square, castle_rights);
+        MoveState saved_position = search_position;
+        search_position.zobrist_key ^= z_side ^ zobrist_ep_key(pieces, side_to_move, ep_square);
+        if (search_position.halfmove_clock < UINT32_MAX) ++search_position.halfmove_clock;
         int score = -negamax(-beta, -beta + 1, null_depth, pieces, occupancy,
                               side_to_move ^ 1, NO_SQUARE, castle_rights,
                               ply + 1, 0, halfmove + 1, 0, 1);
         cce_nnue_undo_null();
+        search_position = saved_position;
         if (aborted) return 0;
         if (score >= beta && score < MATE_SCORE - MAX_PLY) {
             stats.null_cutoffs++;
@@ -497,7 +504,7 @@ static int negamax(int alpha, int beta, int depth, Bitboard pieces[12],
         int next_halfmove = MOVE_PIECE(m) == P || MOVE_PIECE(m) == p || MOVE_IS_CAPTURE(m)
                             ? 0 : halfmove + 1;
         // the current ply's undo record survives child search at ply + 1.
-        if (!make_move(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply))
+        if (!make_move_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply, &search_position))
             continue;
         legal_count++;
         int child_depth = depth - 1 + (m == singular_move);
@@ -507,7 +514,7 @@ static int negamax(int alpha, int beta, int depth, Bitboard pieces[12],
         if (futility_node && quiet && MOVE_PIECE(m) != P && MOVE_PIECE(m) != p &&
             !in_check(pieces, occupancy, side_to_move)) {
             stats.futility_skips++;
-            unmake_move(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply);
+            unmake_move_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply, &search_position);
             continue;
         }
         // preserve short tactical lines; depth-three reductions can
@@ -547,7 +554,7 @@ static int negamax(int alpha, int beta, int depth, Bitboard pieces[12],
                 }
             }
         }
-        unmake_move(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply);
+        unmake_move_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply, &search_position);
         if (aborted) return 0;
 
         if (!best_move || score > alpha) best_move = m;
@@ -602,7 +609,7 @@ static RootResult search_root(int alpha, int beta, int depth,
         int next_halfmove = MOVE_PIECE(m) == P || MOVE_PIECE(m) == p || MOVE_IS_CAPTURE(m)
                             ? 0 : game_state.halfmove_clock + 1;
         // do not copy the 12 piece bitboards for every candidate.
-        if (!make_move(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, 0))
+        if (!make_move_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, 0, &search_position))
             continue;
         result.legal++;
         int score;
@@ -622,7 +629,7 @@ static RootResult search_root(int alpha, int beta, int depth,
                                  child_follow, next_halfmove, 1, 0);
             }
         }
-        unmake_move(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, 0);
+        unmake_move_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, 0, &search_position);
         if (aborted) return result;
         if (score > result.score) { result.score = score; result.move = m; }
         if (score > alpha) {
@@ -653,6 +660,8 @@ Move search_best_move_with_state(Bitboard pieces[12], Bitboard occupancy[3],
         if (options.verbose) puts("Draw claim available: threefold repetition or fifty-move rule.");
         return 0;
     }
+    move_state_init(&search_position, pieces, side_to_move, ep_square, castle_rights,
+                    (uint32_t)game_state.halfmove_clock);
     Move best_move = 0;
     int previous_score = 0;
     for (int depth = 1; depth <= max_depth && depth < MAX_PLY; depth++) {

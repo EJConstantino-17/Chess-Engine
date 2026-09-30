@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := all
-
+# 9/30/2026 12:05: Separate C engine and C++17 Stockfish NNUE compilation.
 CC = gcc
 CXX = g++
 NNUE ?= 1

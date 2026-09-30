@@ -40,12 +40,25 @@ typedef uint32_t Move;
 #define NO_PIECE -1
 #define MAX_PLY  256
 
+// Only irreversible fields; the caller retains the encoded move.
 typedef struct {
-    Move  move;
-    int   captured_piece; // piece index (0-11) or NO_PIECE
-    int   ep_square;
-    int   castle_rights;
+    uint64_t zobrist_key;
+    uint32_t halfmove_clock;
+    int8_t captured_piece;
+    int8_t ep_square;
+    uint8_t castle_rights;
 } UndoState;
+#if defined(__cplusplus)
+static_assert(sizeof(UndoState) == 16, "UndoState must occupy 16 bytes");
+#else
+_Static_assert(sizeof(UndoState) == 16, "UndoState must occupy 16 bytes");
+#endif
+
+// Live metadata is separate from the per-ply undo records.
+typedef struct {
+    uint64_t zobrist_key;
+    uint32_t halfmove_clock;
+} MoveState;
 
 extern UndoState undo_stack[MAX_PLY];
 
@@ -78,7 +91,7 @@ void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occu
 void generate_piece_moves(MoveList *move_list, int piece_type, Bitboard piece_bb, Bitboard own_occ, Bitboard enemy_occ, Bitboard both_occ);
 void generate_castling_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int castle_rights);
 void generate_all_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq, int castle_rights);
-// 9/30/2026 02:08: Captures and promotions for qsearch outside check.
+// Captures and promotions for qsearch outside check.
 void generate_tactical_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq);
 
 // header-local definition lets the compiler inline attack checks
@@ -104,8 +117,17 @@ static inline int is_square_attacked(int sq, Bitboard pieces[12],
     return 0;
 }
 
-// Make / Unmake move (ply is the current search depth index into undo_stack)
-int  make_move  (Move move, Bitboard pieces[12], Bitboard occupancy[3], int *side_to_move, int *ep_square, int *castle_rights, int ply);
-void unmake_move(Move move, Bitboard pieces[12], Bitboard occupancy[3], int *side_to_move, int *ep_square, int *castle_rights, int ply);
+// Initialize once per root/FEN, then use one slot per live ply.
+void move_state_init(MoveState *state, Bitboard pieces[12], int side, int ep,
+                     int castle, uint32_t halfmove);
+int make_move_state(Move move, Bitboard pieces[12], Bitboard occupancy[3],
+                    int *side, int *ep, int *castle, int ply, MoveState *state);
+void unmake_move_state(Move move, Bitboard pieces[12], Bitboard occupancy[3],
+                       int *side, int *ep, int *castle, int ply, MoveState *state);
+// Existing callers can continue using the board-only API.
+int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3], int *side,
+              int *ep, int *castle, int ply);
+void unmake_move(Move move, Bitboard pieces[12], Bitboard occupancy[3], int *side,
+                 int *ep, int *castle, int ply);
 
-#endif // MOVEGEN_H
+#endif
