@@ -1,4 +1,5 @@
 #include "../inc/eval.h"
+#include "../nnue/cce_nnue.h"
 
 #define FLIP(sq) ((sq) ^ 56)
 #define OTHER(side) ((side) ^ 1)
@@ -162,6 +163,7 @@ static int mg_table[12][64];
 static int eg_table[12][64];
 
 void init_eval_tables(void) {
+    cce_nnue_init();
     for (int type = P; type <= K; type++) {
         for (int sq = 0; sq < 64; sq++) {
             mg_table[type][sq] = mg_value[type] + mg_pesto_table[type][FLIP(sq)];
@@ -172,7 +174,7 @@ void init_eval_tables(void) {
     }
 }
 
-int evaluate(Bitboard pieces[12], Bitboard occupancy[3], int side_to_move) {
+int evaluate_pesto(Bitboard pieces[12], Bitboard occupancy[3], int side_to_move) {
     (void)occupancy;
 
     int mg[2] = { 0, 0 };
@@ -200,4 +202,12 @@ int evaluate(Bitboard pieces[12], Bitboard occupancy[3], int side_to_move) {
 
     return (mg_score * mg_phase + eg_score * eg_phase) / 24;
 
+}
+
+// Select the fully loaded NNUE backend; retain PeSTO for A/B tests.
+int evaluate(Bitboard pieces[12], Bitboard occupancy[3], int side_to_move) {
+#ifdef CCE_NNUE
+    if (cce_nnue_enabled()) return cce_nnue_evaluate(pieces, side_to_move);
+#endif
+    return evaluate_pesto(pieces, occupancy, side_to_move);
 }

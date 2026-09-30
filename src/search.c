@@ -1,3 +1,4 @@
+#include "../nnue/cce_nnue.h"
 #include "../inc/eval.h"
 #include "../inc/movegen.h"
 #include "../inc/search.h"
@@ -273,16 +274,9 @@ static int quiescence(int alpha, int beta, Bitboard pieces[12], Bitboard occupan
     }
 
     MoveList pseudo_moves;
-    generate_all_moves(&pseudo_moves, pieces, occupancy, side_to_move, ep_square, castle_rights);
-    // quiet moves are irrelevant outside check at q-nodes.
-    if (!checked) {
-        int captures = 0;
-        for (int i = 0; i < pseudo_moves.count; i++) {
-            Move m = pseudo_moves.moves[i];
-            if (MOVE_IS_CAPTURE(m) || MOVE_PROMOTED(m)) pseudo_moves.moves[captures++] = m;
-        }
-        pseudo_moves.count = captures;
-    }
+    // In check, quiet evasions are still required.
+    if (checked) generate_all_moves(&pseudo_moves, pieces, occupancy, side_to_move, ep_square, castle_rights);
+    else generate_tactical_moves(&pseudo_moves, pieces, occupancy, side_to_move, ep_square);
 
     int move_scores[sizeof(pseudo_moves.moves) / sizeof(pseudo_moves.moves[0])];
     int legal_moves_count = 0;
@@ -456,9 +450,12 @@ static int negamax(int alpha, int beta, int depth, Bitboard pieces[12],
         int reduction = 2 + depth / 4;
         int null_depth = depth - 1 - reduction;
         if (null_depth < 0) null_depth = 0;
+        // Artificial null moves also advance and restore NNUE state.
+        cce_nnue_null(pieces, side_to_move, ep_square, castle_rights);
         int score = -negamax(-beta, -beta + 1, null_depth, pieces, occupancy,
                               side_to_move ^ 1, NO_SQUARE, castle_rights,
                               ply + 1, 0, halfmove + 1, 0, 1);
+        cce_nnue_undo_null();
         if (aborted) return 0;
         if (score >= beta && score < MATE_SCORE - MAX_PLY) {
             stats.null_cutoffs++;
@@ -688,6 +685,8 @@ Move search_best_move_with_state(Bitboard pieces[12], Bitboard occupancy[3],
         stats.best_move = best_move;
         previous_pv_length = pv_length[0];
         for (int j = 0; j < previous_pv_length; j++) previous_pv[j] = pv_table[0][j];
+        stats.pv_count = previous_pv_length;
+        for (int j = 0; j < stats.pv_count; j++) stats.pv[j] = previous_pv[j];
         if (options.verbose) {
             TT_Stats after = get_tt_stats();
             uint64_t probes = after.probes - before.probes;

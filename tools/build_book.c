@@ -1,9 +1,9 @@
 // offline compiler, standalone compiler for UCI move lines.
 // Usage: build_book OUTPUT.cbk INPUT.txt [MORE.txt ...]
 // Inputs are one UCI line each, or TSV with a named 'uci' column.
-#include "book_index.h"
-#include "tt.h"
-#include "eval.h"
+#include "../inc/book_index.h"
+#include "../inc/tt.h"
+#include "../inc/eval.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

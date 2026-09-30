@@ -5,7 +5,7 @@ root="$(cd "$(dirname "$0")" && pwd)"
 ndk="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"
 if [[ -z "$ndk" ]]; then echo 'Set ANDROID_NDK_HOME to an installed Android NDK.' >&2; exit 1; fi
 case "$(uname -s)" in Linux) host=linux-x86_64;; Darwin) host=darwin-x86_64;; *) echo 'Use build_android_oex.ps1 on Windows.' >&2; exit 1;; esac
-clang="$(which clang)"
+clang="$ndk/toolchains/llvm/prebuilt/$host/bin/aarch64-linux-android26-clang"
 [[ -x "$clang" ]] || { echo "Missing NDK compiler: $clang" >&2; exit 1; }
 [[ -n "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}" ]] || { echo 'Set ANDROID_HOME to the Android SDK.' >&2; exit 1; }
 export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"

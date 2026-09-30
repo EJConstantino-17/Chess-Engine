@@ -1,3 +1,4 @@
+#include "../nnue/cce_nnue.h"
 #include "../inc/movegen.h"
 #include "../inc/magic.h"
 
@@ -230,6 +231,40 @@ void generate_all_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occup
     generate_castling_moves(move_list, pieces, occupancy, side_to_move, castle_rights);
 }
 
+// Avoid generating quiet piece moves and castling at q-nodes.
+void generate_tactical_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq) {
+    move_list->count = 0;
+    generate_pawn_moves(move_list, pieces, occupancy, side_to_move, ep_sq);
+    int count = 0;
+    for (int i = 0; i < move_list->count; i++) {
+        Move m = move_list->moves[i];
+        if (MOVE_IS_CAPTURE(m) || MOVE_PROMOTED(m)) move_list->moves[count++] = m;
+    }
+    move_list->count = count;
+    int offset = side_to_move == WHITE ? 0 : 6;
+    Bitboard enemy = occupancy[side_to_move ^ 1] & ~pieces[side_to_move == WHITE ? k : K];
+    for (int type = N; type <= K; type++) {
+        if (type == P) continue;
+        Bitboard active = pieces[type + offset];
+        while (active) {
+            int src = pop_lsb(&active);
+            Bitboard attacks = 0;
+            switch (type) {
+                case N: attacks = knight_attacks[src]; break;
+                case B: attacks = get_bishop_attacks(src, occupancy[BOTH]); break;
+                case R: attacks = get_rook_attacks(src, occupancy[BOTH]); break;
+                case Q: attacks = get_queen_attacks(src, occupancy[BOTH]); break;
+                case K: attacks = king_attacks[src]; break;
+            }
+            attacks &= enemy;
+            while (attacks) {
+                int dst = pop_lsb(&attacks);
+                add_move(move_list, ENCODE_MOVE(src, dst, type + offset, 0, 1, 0, 0, 0));
+            }
+        }
+    }
+}
+
 void generate_castling_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int castle_rights) {
     if (side_to_move == WHITE) {
         if ((castle_rights & WK_RIGHT) && TEST_BIT(pieces[K], E1) && TEST_BIT(pieces[R], H1) && !(occupancy[BOTH] & WK_PATH)) {
@@ -296,6 +331,9 @@ int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
     // reject malformed or king-capturing moves before touching the undo stack.
     if (piece > k || !(pieces[piece] & (1ULL << src)) ||
         (pieces[enemy_side == WHITE ? K : k] & (1ULL << target))) return 0;
+
+    // Prepare NNUE before board mutation; rejected moves do not advance it.
+    cce_nnue_prepare(move, pieces, *side_to_move, *ep_square, *castle_rights, ply);
 
     undo_stack[ply].move          = move;
     undo_stack[ply].ep_square     = *ep_square;
@@ -370,12 +408,14 @@ int make_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
         return 0;
     }
 
+    cce_nnue_commit(move, ply);
     *side_to_move = enemy_side;
     return 1;
 }
 
 void unmake_move(Move move, Bitboard pieces[12], Bitboard occupancy[3],
                  int *side_to_move, int *ep_square, int *castle_rights, int ply) {
+    cce_nnue_unmake(move, ply);
 
     // The side that made this move is now the *enemy* (since make_move
     // switches side_to_move before we get here only for legal moves;

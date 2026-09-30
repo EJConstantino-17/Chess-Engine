@@ -78,6 +78,8 @@ void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occu
 void generate_piece_moves(MoveList *move_list, int piece_type, Bitboard piece_bb, Bitboard own_occ, Bitboard enemy_occ, Bitboard both_occ);
 void generate_castling_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int castle_rights);
 void generate_all_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq, int castle_rights);
+// 9/30/2026 02:08: Captures and promotions for qsearch outside check.
+void generate_tactical_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq);
 
 // header-local definition lets the compiler inline attack checks
 // during move validation and search (with LTO it may also inline magic lookups).

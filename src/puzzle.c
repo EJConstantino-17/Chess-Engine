@@ -88,6 +88,48 @@ static void move_string(Move move, char out[6]) {
     } else out[4] = 0;
 }
 
+static void print_line(const SearchStats *stats, const char *fen,
+                       Bitboard board[12], Bitboard occupancy[3],
+                       int side, int ep, int castle) {
+    if (!stats->completed_depth || !stats->pv_count) {
+        puts("Line: unavailable (no completed depth)");
+        return;
+    }
+    int move_number = 1;
+    sscanf(fen, "%*s %*s %*s %*s %*d %d", &move_number);
+    Bitboard pieces[12], occ[3];
+    memcpy(pieces, board, sizeof(pieces));
+    memcpy(occ, occupancy, sizeof(occ));
+    printf("Line (depth %d):", stats->completed_depth);
+    for (int i = 0; i < stats->pv_count; i++) {
+        Move move = stats->pv[i];
+        int next_side = side, next_ep = ep, next_castle = castle;
+        if (!make_move(move, pieces, occ, &next_side, &next_ep, &next_castle, i)) break;
+        char text[6]; move_string(move, text);
+        if (side == WHITE) printf(" %d. %s", move_number, text);
+        else if (i == 0) printf(" %d... %s", move_number, text);
+        else printf(" %s", text);
+        if (side == BLACK) move_number++;
+        side = next_side; ep = next_ep; castle = next_castle;
+    }
+    putchar('\n');
+}
+
+static void print_advantage(int score, int side) {
+    int white_score = side == WHITE ? score : -score;
+    if (score >= MATE_SCORE - MAX_PLY || score <= -MATE_SCORE + MAX_PLY) {
+        int plies = MATE_SCORE - abs(score);
+        printf("Advantage: %s, mate in %d\n",
+               white_score > 0 ? "White" : "Black", (plies + 1) / 2);
+    } else if (white_score == 0) {
+        puts("Advantage: equal (0.00 pawns)");
+    } else {
+        printf("Advantage: %s +%.2f pawns (%+d cp from White's perspective)\n",
+               white_score > 0 ? "White" : "Black",
+               abs(white_score) / 100.0, white_score);
+    }
+}
+
 int puzzle_cli(int argc, char **argv) {
     const char *fen = NULL, *expect = NULL;
     int depth = 15, time_ms = 5000;
@@ -143,6 +185,9 @@ int puzzle_cli(int argc, char **argv) {
            " qnodes=%" PRIu64 " cpu_s=%.3f stopped=%d\n",
            uci, stats.score, stats.completed_depth, depth, stats.nodes,
            stats.qnodes, elapsed, stats.stopped);
+    print_line(&stats, fen, board, occupancy, side, ep, castle);
+    if (stats.completed_depth) print_advantage(stats.score, side);
+    else puts("Advantage: unavailable (no completed depth)");
     printf("Singular attempted=%" PRIu64 " extended=%" PRIu64 " refuted=%" PRIu64 "\n",
            stats.singular_attempts, stats.singular_extensions, stats.singular_refutations);
     if (expect) printf("Expected=%s result=%s\n", expect,

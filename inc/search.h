@@ -48,6 +48,8 @@ typedef struct {
     uint64_t singular_attempts, singular_extensions, singular_refutations;
     int completed_depth, score, stopped;
     Move best_move;
+    Move pv[MAX_PLY];
+    int pv_count; // Last fully completed iteration; empty if no iteration completed.
 } SearchStats;
 void search_set_options(SearchOptions options);
 SearchOptions search_get_options(void);

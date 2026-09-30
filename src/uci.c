@@ -1,3 +1,4 @@
+#include "../nnue/cce_nnue.h"
 // text protocol shared by UCI GUIs. Keep stdout free of game-loop text.
 #include "../inc/uci.h"
 #include "../inc/search.h"
@@ -28,6 +29,9 @@ typedef struct {
     int own_book, move_time_cap_ms;
     char book_file[512];
     char book_index[512];
+#ifdef CCE_NNUE
+    char eval_file[512];
+#endif
 } Uci;
 
 static void reset_position(Uci *u, const char *fen) {
@@ -201,6 +205,10 @@ int uci_loop(void) {
     u.move_time_cap_ms=2000;
     strcpy(u.book_file,"opening_book.txt");
     strcpy(u.book_index,"opening_book.cbk");
+#ifdef CCE_NNUE
+    const char *network_path=getenv("CCE_NNUE_FILE");
+    snprintf(u.eval_file,sizeof u.eval_file,"%s",network_path?network_path:"nn-134a887f4c8f.nnue");
+#endif
     for(;;) {
         if(u.has_pending) {
             strcpy(u.partial,u.pending);u.has_pending=0;
@@ -213,10 +221,32 @@ int uci_loop(void) {
             puts("option name BookFile type string default opening_book.txt");
             puts("option name BookIndex type string default opening_book.cbk");
             puts("option name Move Time Cap type spin default 2000 min 0 max 60000");
+#ifdef CCE_NNUE
+            // GUI-selectable backend; clear TT after changing evaluation.
+            printf("option name UseNNUE type check default %s\n",cce_nnue_enabled()?"true":"false");
+            printf("option name EvalFile type string default %s\n",u.eval_file);
+#endif
             puts("uciok");fflush(stdout);
         } else if(!strcmp(u.partial,"isready")) {puts("readyok");fflush(stdout);}
         else if(!strcmp(u.partial,"ucinewgame")) {clear_tt();reset_position(&u,START_FEN);}
         else if(!strncmp(u.partial,"position ",9)) set_position(&u,u.partial);
+#ifdef CCE_NNUE
+        else if(!strncmp(u.partial,"setoption name UseNNUE value ",29)) {
+            int enable=!strcmp(u.partial+29,"true") || !strcmp(u.partial+29,"1");
+            if(enable) {
+                if(!cce_nnue_load(u.eval_file)) printf("info string NNUE load failed: %s\n",cce_nnue_error());
+            } else cce_nnue_enable(0);
+            clear_tt();
+        } else if(!strncmp(u.partial,"setoption name EvalFile value ",30)) {
+            const char *path=u.partial+30;
+            if(*path && strlen(path)<sizeof u.eval_file) {
+                int enabled=cce_nnue_enabled();
+                if(cce_nnue_load(path)) {
+                    strcpy(u.eval_file,path);cce_nnue_enable(enabled);clear_tt();
+                } else printf("info string NNUE load failed: %s\n",cce_nnue_error());
+            }
+        }
+#endif
         else if(!strncmp(u.partial,"setoption name Hash value ",26)) {
             int mb=atoi(u.partial+26);if(mb>=1&&mb<=1024)init_tt((size_t)mb);
         } else if(!strcmp(u.partial,"setoption name Clear Hash"))clear_tt();
@@ -234,6 +264,7 @@ int uci_loop(void) {
         }
         else if(!strncmp(u.partial,"go",2) && (!u.partial[2]||u.partial[2]==' '))go(&u,u.partial);
         else if(!strcmp(u.partial,"quit"))break;
+        fflush(stdout);
         if(u.quit)break;
     }
     return 0;

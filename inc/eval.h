@@ -5,6 +5,7 @@
 
 void init_eval_tables(void);
 
+int evaluate_pesto(Bitboard pieces[12], Bitboard occupancy[3], int side_to_move);
 int evaluate(Bitboard pieces[12], Bitboard occupancy[3], int side_to_move);
 
 extern const int mg_value[6];
