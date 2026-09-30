@@ -1,5 +1,4 @@
 .DEFAULT_GOAL := all
-# 9/30/2026 12:05: Separate C engine and C++17 Stockfish NNUE compilation.
 CC = gcc
 CXX = g++
 NNUE ?= 1
@@ -30,7 +29,6 @@ PYTHON ?= python
 else
 PYTHON ?= python3
 endif
-# 9/30/2026 15:29: Match the Python builder's native SIMD selection; scalar remains explicit.
 ifeq ($(SIMD),auto)
 ifeq ($(NNUE),1)
 override SIMD := $(shell $(PYTHON) -c "import subprocess; p=subprocess.run([r'$(CXX)', '-march=native', '-dM', '-E', '-x', 'c++', '-'], input='', text=True, capture_output=True); print('avx2' if p.returncode==0 and '__AVX2__ ' in p.stdout else 'neon' if p.returncode==0 and '__ARM_NEON' in p.stdout else 'scalar')")
@@ -62,7 +60,7 @@ LINK = $(CC)
 endif
 ENGINE_OBJ = $(patsubst %.c,$(BUILD)/%.o,$(ENGINE_SRC))
 CORE_OBJ = $(patsubst %.c,$(BUILD)/%.o,$(CORE_SRC))
-.PHONY: all clean diagnostics nnue-test FORCE
+.PHONY: all clean diagnostics nnue-test search-tree-test FORCE
 FORCE:
 all: cce_engine$(EXE)
 cce_engine$(EXE): $(ENGINE_OBJ) $(NNUE_OBJ) FORCE
@@ -80,5 +78,9 @@ $(BUILD)/%.o: %.cpp Makefile
 	@$(PYTHON) -c "from pathlib import Path; Path(r'$(dir $@)').mkdir(parents=True, exist_ok=True)"
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
 clean:
-	$(PYTHON) -c "import shutil; from pathlib import Path; shutil.rmtree(r'$(BUILD)', ignore_errors=True); [Path(n).unlink(missing_ok=True) for n in ('cce_engine$(EXE)', 'engine_diagnostics$(EXE)', 'nnue_benchmark$(EXE)')]"
+	$(PYTHON) -c "import shutil; from pathlib import Path; shutil.rmtree(r'$(BUILD)', ignore_errors=True); [Path(n).unlink(missing_ok=True) for n in ('cce_engine$(EXE)', 'engine_diagnostics$(EXE)', 'nnue_benchmark$(EXE)', 'search_tree_benchmark$(EXE)')]"
 -include $(wildcard $(BUILD)/src/*.d $(BUILD)/tests/*.d $(BUILD)/nnue/*.d $(BUILD)/nnue/stockfish/src/*.d $(BUILD)/nnue/stockfish/src/nnue/*.d $(BUILD)/nnue/stockfish/src/nnue/features/*.d)
+
+search-tree-test: search_tree_benchmark$(EXE)
+search_tree_benchmark$(EXE): $(BUILD)/tests/search_tree_benchmark.o $(CORE_OBJ) $(NNUE_OBJ) FORCE
+	$(LINK) $(filter-out FORCE,$^) $(LDFLAGS) -o $@

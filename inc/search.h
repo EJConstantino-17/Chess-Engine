@@ -37,6 +37,7 @@ typedef struct {
     // switches permit identical-position A/B diagnostics.
     int futility, reverse_futility, razoring, tt_prefetch;
     int singular; // verified +1 ply extension for a uniquely strong TT move
+    int q_delta, q_see, dynamic_lmr, tuned_rfp; // independent benchmark switches
 } SearchOptions;
 typedef struct {
     uint64_t nodes, qnodes, null_cutoffs, lmr_researches, pvs_researches;
@@ -46,7 +47,8 @@ typedef struct {
     uint64_t futility_skips, reverse_futility_cutoffs, razor_attempts, razor_cutoffs;
     uint64_t prefetches;
     uint64_t singular_attempts, singular_extensions, singular_refutations;
-    double elapsed_ms; // Measured search duration for UCI time/NPS.
+    uint64_t q_delta_skips, q_see_skips;
+    double elapsed_ms; 
     int completed_depth, score, stopped;
     Move best_move;
     Move pv[MAX_PLY];

@@ -1,4 +1,4 @@
-"""9/30/2026 12:05: Exercise backend switching and failed network reloads through UCI."""
+
 import argparse
 import os
 from pathlib import Path
@@ -27,7 +27,6 @@ def search():
     send('go depth 4')
     rows=collect('bestmove ')
     assert rows[-1] != 'bestmove 0000'
-    # 9/30/2026 15:29: Time/NPS vary; compare deterministic search fields.
     return [re.sub(r" (?:time|nps) \d+", "", line) for line in rows]
 try:
     send('uci');assert 'option name UseNNUE type check default true' in collect('uciok')

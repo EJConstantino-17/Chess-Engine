@@ -12,7 +12,7 @@ static uint32_t read_le32(const unsigned char bytes[4]) {
            ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
 }
 
-// 9/30/2026 02:19: Fail closed on truncated or different NNUE containers.
+
 int nnue_inspect_file(const char *path, NNUEFileInfo *out,
                       char *description, size_t description_capacity) {
     if (!path || !out || !description || description_capacity == 0) return 0;

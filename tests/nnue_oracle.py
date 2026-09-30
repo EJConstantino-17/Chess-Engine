@@ -1,4 +1,4 @@
-"""Compare CCE raw evaluations with an independent matching Stockfish binary."""
+
 import argparse
 import os
 import queue

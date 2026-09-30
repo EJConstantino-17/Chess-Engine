@@ -4,9 +4,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* C interface to the pinned Stockfish NNUE implementation. */
+
 #ifdef CCE_NNUE
-/* Counters expose actual accumulator paths during a measured search. */
+
 typedef struct {
     uint64_t evaluations, resyncs, commits;
     uint64_t cached, incremental, refresh, hybrid;

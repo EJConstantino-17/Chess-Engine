@@ -213,7 +213,7 @@ void generate_piece_moves(MoveList *move_list, int piece_type, Bitboard piece_bb
     }
 }
 
-// Geometry and occupancy only; search validates played moves.
+
 void generate_pseudo_legal_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq, int castle_rights) {
     move_list->count = 0;
 
@@ -233,13 +233,13 @@ void generate_pseudo_legal_moves(MoveList *move_list, Bitboard pieces[12], Bitbo
     generate_castling_moves(move_list, pieces, occupancy, side_to_move, castle_rights);
 }
 
-// Retain the public name used by game, book, and perft callers.
+
 void generate_all_moves(MoveList *list, Bitboard pieces[12], Bitboard occupancy[3],
                         int side, int ep, int castle) {
     generate_pseudo_legal_moves(list, pieces, occupancy, side, ep, castle);
 }
 
-// Avoid generating quiet piece moves and castling at q-nodes.
+
 void generate_tactical_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq) {
     move_list->count = 0;
     generate_pawn_moves(move_list, pieces, occupancy, side_to_move, ep_sq);
@@ -273,7 +273,7 @@ void generate_tactical_moves(MoveList *move_list, Bitboard pieces[12], Bitboard 
     }
 }
 
-// Castling candidates need rights, king/rook presence, and empty paths.
+
 void generate_castling_moves(MoveList *list, Bitboard pieces[12], Bitboard occupancy[3],
                              int side, int rights) {
     if (side == WHITE) {
@@ -301,7 +301,7 @@ static const int castling_rights_update[64] = {
 };
 
 
-// A square toggle updates a piece, its side, BOTH, and the live hash.
+
 static inline void toggle_piece(Bitboard pieces[12], Bitboard occupancy[3],
                                 int piece, Bitboard squares, MoveState *state) {
     pieces[piece] ^= squares;
@@ -327,7 +327,7 @@ static Bitboard castle_rook_squares(int target) {
     return (1ULL << from) | (1ULL << to);
 }
 
-// Apply a generated candidate; NNUE is prepared but not committed.
+
 int make_move_unchecked_state(Move move, Bitboard pieces[12], Bitboard occupancy[3],
                     int *side, int *ep, int *castle, int ply, MoveState *state) {
     int src = MOVE_SRC(move), dst = MOVE_TARGET(move), piece = MOVE_PIECE(move);
@@ -397,7 +397,7 @@ int make_move_unchecked_state(Move move, Bitboard pieces[12], Bitboard occupancy
     return 1;
 }
 
-// Check the mover, not the opponent whose turn it now is.
+
 int move_is_legal_after_make(Move move, Bitboard pieces[12], Bitboard occupancy[3]) {
     int piece = MOVE_PIECE(move), us = piece <= K ? WHITE : BLACK, them = us ^ 1;
     int king = us == WHITE ? K : k;
@@ -426,7 +426,7 @@ int move_is_legal_after_make(Move move, Bitboard pieces[12], Bitboard occupancy[
     return safe;
 }
 
-// Compatibility API still rejects and rolls back illegal moves.
+
 int make_move_state(Move move, Bitboard pieces[12], Bitboard occupancy[3],
                     int *side, int *ep, int *castle, int ply, MoveState *state) {
     if (!make_move_unchecked_state(move, pieces, occupancy, side, ep, castle, ply, state)) return 0;

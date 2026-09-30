@@ -1,4 +1,4 @@
-/* 9/30/2026 12:05: Compare full refresh with incremental features, then PeSTO/NNUE searches. */
+
 #include "../inc/eval.h"
 #include "../inc/movegen.h"
 #include "../inc/search.h"
@@ -100,7 +100,7 @@ static void correctness(int oracle) {
     cce_nnue_null(b,side,ep,castle);validate(b,side^1);
     int budget=80;walk(b,o,side^1,-1,castle,1,2,&budget,oracle);
     cce_nnue_undo_null();require(cce_nnue_raw(b,side,0)==before,"null move undo");
-    // 9/30/2026 12:05: CCE permits deeper paths than the upstream accumulator stack.
+    
     parse_fen(positions[0],b,o,&side,&ep,&castle);cce_nnue_reset();
     Move deep_path[252];
     const int from[4]={G1,G8,F3,F6},to[4]={F3,F6,G1,G8};

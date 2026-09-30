@@ -1,6 +1,6 @@
 #ifndef CCE_TIMING_H
 #define CCE_TIMING_H
-// Search budgets and UCI metrics use elapsed wall time.
+
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN

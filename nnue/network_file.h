@@ -10,7 +10,7 @@ typedef struct {
     uint64_t file_size;
 } NNUEFileInfo;
 
-// 9/30/2026 02:19: Inspect the specific Stockfish network container; no inference.
+
 #ifdef __cplusplus
 extern "C" {
 #endif

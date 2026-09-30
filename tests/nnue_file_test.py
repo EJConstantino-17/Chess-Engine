@@ -1,4 +1,4 @@
-"""Check the supplied network and reject damaged headers."""
+
 import hashlib
 import pathlib
 import subprocess

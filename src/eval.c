@@ -204,7 +204,7 @@ int evaluate_pesto(Bitboard pieces[12], Bitboard occupancy[3], int side_to_move)
 
 }
 
-// Select the fully loaded NNUE backend; retain PeSTO for A/B tests.
+
 int evaluate(Bitboard pieces[12], Bitboard occupancy[3], int side_to_move) {
 #ifdef CCE_NNUE
     if (cce_nnue_enabled()) return cce_nnue_evaluate(pieces, side_to_move);

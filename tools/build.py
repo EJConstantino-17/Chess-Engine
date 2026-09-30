@@ -1,4 +1,4 @@
-"""9/30/2026 12:05: Portable C/C++ build for PowerShell, Linux, Termux, and Android NDK."""
+
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import os
@@ -41,7 +41,6 @@ else:
 for compiler in [cc] + ([] if a.pesto_only else [cxx]):
     if not shutil.which(compiler):
         p.error(f'Compiler not found: {compiler}. Install a 64-bit GCC/G++ or Android NDK toolchain.')
-# 9/30/2026 15:29: Detect the compiler's native CPU features instead of silently using scalar NNUE.
 if a.simd == 'auto':
     a.simd = 'scalar'
     if not a.pesto_only:
@@ -95,6 +94,7 @@ if a.simd == 'neon':
 tests = [] if a.android_ndk else [root / 'tests/engine_diagnostics.c']
 if not a.pesto_only and not a.android_ndk:
     tests.append(root / 'tests/nnue_benchmark.c')
+    tests.append(root / 'tests/search_tree_benchmark.c')
 objects = {}
 def compile_source(source):
     obj = (build / source.relative_to(root)).with_suffix('.o')
@@ -116,3 +116,6 @@ if not a.android_ndk:
     link('engine_diagnostics', [tests[0], *core_sources, *nnue_sources])
     if not a.pesto_only:
         link('nnue_benchmark', [tests[1], *core_sources, *nnue_sources])
+
+if not a.android_ndk and not a.pesto_only:
+    link('search_tree_benchmark', [tests[2], *core_sources, *nnue_sources])

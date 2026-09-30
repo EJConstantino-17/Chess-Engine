@@ -1,4 +1,4 @@
-/* 9/30/2026 12:05: Verify the complete target network before parameter decoding. */
+
 #include "sha256.h"
 #include <array>
 #include <cstdint>

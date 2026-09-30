@@ -14,7 +14,7 @@
 #include <sstream>
 #include <string>
 
-// Perspective path counters are incremented by the unchanged NNUE algorithms.
+
 extern "C" {
 uint64_t cce_nnue_accumulator_paths[4] = {};
 }
@@ -88,7 +88,7 @@ void init_tables() {
 }
 
 extern "C" {
-/* Load transactionally; a rejected file cannot damage the active net. */
+
 void cce_nnue_reset_stats(void) {
     performance = {};
     std::fill(std::begin(cce_nnue_accumulator_paths), std::end(cce_nnue_accumulator_paths), 0);
@@ -178,8 +178,7 @@ int cce_nnue_validate(const uint64_t b[12],int side) {
     return incremental==rebuilt && accum->latest().accumulation==fresh->latest().accumulation
         && accum->latest().psqtAccumulation==fresh->latest().psqtAccumulation;
 }
-/* Convert raw NNUE internal units with upstream's material-dependent CP model.
-   CCE retains its own draw rules; Stockfish optimism and rule50 damping are not applied. */
+
 int cce_nnue_evaluate(const uint64_t b[12], int side) {
     int raw=cce_nnue_raw(b,side,0);
     int material=pos.count<PAWN>()+3*pos.count<KNIGHT>()+3*pos.count<BISHOP>()+5*pos.count<ROOK>()+9*pos.count<QUEEN>();
@@ -187,7 +186,7 @@ int cce_nnue_evaluate(const uint64_t b[12], int side) {
     double a=(((-142.72052667*m+372.35176398)*m-340.71073572)*m)+415.23490212;
     return std::clamp(int(std::round(100.0*raw/a)),-20000,20000);
 }
-/* Prepare before mutation; commit only after CCE confirms legality. */
+
 void cce_nnue_prepare(uint32_t m,const uint64_t b[12],int side,int ep,int castle,int ply) {
     if(!cce_nnue_enabled() || ply<0 || ply>=256) return;
     frames[ply]={};

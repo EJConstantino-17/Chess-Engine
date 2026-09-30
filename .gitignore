@@ -22,3 +22,7 @@ head_to_head.py
 cce_engine
 benchmarks/
 examples/
+
+/build/
+*.o
+/android/oex/.gradle/

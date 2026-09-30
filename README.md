@@ -156,3 +156,45 @@ NNUE performance profiling: `python tools/build.py --nnue-profile`, then
 run `nnue_benchmark` with the network and `--bench`. This reports live
 evaluation, resync, and accumulator-path counts. Profiling is disabled in
 normal builds. UCI search output now includes elapsed time, NPS, and PV.
+
+### Search benchmark
+
+`python tools/build.py` also builds `search_tree_benchmark` for native NNUE builds.
+Run from the engine directory with the downloaded network:
+
+```powershell
+.\search_tree_benchmark.exe .\nn-134a887f4c8f.nnue 6 0
+.\search_tree_benchmark.exe .\nn-134a887f4c8f.nnue 30 200
+```
+
+On Linux/Termux, use `./search_tree_benchmark` without `.exe`. Arguments are
+network path, maximum depth, and time limit in milliseconds (`0` requests fixed
+depth, with a 5-second / 3-million-node safety limit). CSV rows compare the original
+search settings, each pruning change independently, their combination, and
+experimental TT score reuse. A completed depth below the requested depth means
+the fixed-depth run hit its limit. Opening books are bypassed and the TT is cleared
+before each run. The six cases cover the initial position, an opening, Kiwipete,
+two tactical positions, and a pawn ending.
+
+With Make, build the harness using `make NNUE=1 search-tree-test`. Normal searches
+use guarded capture delta/SEE pruning, logarithmic late move reductions, and
+reverse futility through depth 4. Check evasions, checking captures, promotions,
+and en passant remain exempt from QS capture pruning. `engine_diagnostics` includes
+exchange, pinned recapture, LMR, and terminal-position checks.
+
+### Stockfish NNUE dependency and licensing
+
+`nnue/stockfish/` contains the pinned Stockfish implementation used by the NNUE
+backend. CCE supplies its own search and move generation. Keep this directory for
+NNUE builds; removing it requires replacing the backend or changing how the
+build obtains the dependency.
+
+Stockfish source is GPLv3 or later. Preserve its copyright notices, `Copying.txt`,
+and `UPSTREAM.md`. When distributing the combined executable, comply with GPLv3,
+including making its complete corresponding source and build instructions
+available under GPL-compatible terms. The upstream modification notice is kept
+in `nnue/stockfish/UPSTREAM.md`.
+
+The root `.gitattributes` marks this dependency as `linguist-vendored`, so GitHub
+excludes it from language statistics after the file is committed and pushed.
+This classification does not change the dependency's license or remove its files.

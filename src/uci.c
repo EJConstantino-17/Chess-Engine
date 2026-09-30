@@ -196,7 +196,7 @@ static void go(Uci *u,const char *line) {
     SearchStats st=search_get_stats();
     search_set_options(saved);
     char move[6];format_move(best,move);
-    // Publish elapsed time, NPS, and the completed PV for GUI diagnostics.
+    
     unsigned long long elapsed = (unsigned long long)(st.elapsed_ms > 0 ? st.elapsed_ms : 0);
     unsigned long long nps = st.elapsed_ms > 0 ? (unsigned long long)(st.nodes * 1000.0 / st.elapsed_ms) : 0;
     printf("info depth %d score cp %d nodes %llu time %llu nps %llu",
@@ -231,7 +231,7 @@ int uci_loop(void) {
             puts("option name BookIndex type string default opening_book.cbk");
             puts("option name Move Time Cap type spin default 2000 min 0 max 60000");
 #ifdef CCE_NNUE
-            // GUI-selectable backend; clear TT after changing evaluation.
+            
             printf("info string NNUE compute backend %s\n",cce_nnue_build_profile());
             printf("option name UseNNUE type check default %s\n",cce_nnue_enabled()?"true":"false");
             printf("option name EvalFile type string default %s\n",u.eval_file);

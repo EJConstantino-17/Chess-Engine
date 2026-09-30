@@ -1,4 +1,4 @@
-"""9/30/2026 15:29: Timed off-book searches verify UCI time/NPS/PV and short budgets."""
+
 import argparse
 import os
 from pathlib import Path

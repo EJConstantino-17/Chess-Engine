@@ -1,4 +1,4 @@
-"""Hash vectors, malformed-file rejection, and transactional reload."""
+
 import argparse
 import hashlib
 import os

@@ -63,7 +63,7 @@ static int side_has_legal_move(Bitboard pieces[12], Bitboard occupancy[3],
     generate_all_moves(&moves, pieces, occupancy, side_to_move, ep_square, castle_rights);
 
     for (int i = 0; i < moves.count; i++) {
-        // 9/30/2026 13:56: Restore the legal probe through make/unmake, including NNUE.
+        
         int side_copy = side_to_move, ep_copy = ep_square, castle_copy = castle_rights;
         int legal = make_move(moves.moves[i], pieces, occupancy,
                              &side_copy, &ep_copy, &castle_copy, 0);

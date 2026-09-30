@@ -39,7 +39,7 @@ static int has_legal_ep(Bitboard pieces[12], int side, int ep_square) {
     Bitboard candidates = pawn_attacks[side ^ 1][ep_square] & pieces[own_pawn];
     while (candidates) {
         int from = pop_lsb(&candidates);
-        // 9/30/2026 13:56: Test EP legality with virtual occupancy, without copying pieces.
+        
         Bitboard occupied = 0;
         for (int pt = P; pt <= k; ++pt) occupied |= pieces[pt];
         if (occupied & (1ULL << ep_square)) return 0;
@@ -60,7 +60,7 @@ static int has_legal_ep(Bitboard pieces[12], int side, int ep_square) {
     return 0;
 }
 
-// 9/30/2026 13:56: Preserve legal-EP repetition semantics in incremental hashes.
+
 uint64_t zobrist_ep_key(Bitboard pieces[12], int side, int ep_square) {
     return has_legal_ep(pieces, side, ep_square) ? z_enpassant[ep_square] : 0;
 }

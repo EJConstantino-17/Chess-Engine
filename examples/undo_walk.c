@@ -1,4 +1,4 @@
-// Pure C example; no NNUE network or external library is required.
+
 #include "../inc/bitboard.h"
 #include "../inc/magic.h"
 #include "../inc/movegen.h"
