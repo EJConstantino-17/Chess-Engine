@@ -5,13 +5,13 @@
 #include "../inc/tt.h"
 #include <string.h>
 #include <stdio.h>
-#include <time.h>
+#include "../inc/timing.h"
 
 static Bitboard nodes_searched = 0;
 // options can be toggled independently for diagnostics.
 static SearchOptions options = {1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1};
 static SearchStats stats;
-static clock_t search_start;
+static double search_start_ms;
 static int aborted;
 // prohibit recursive verification inside a verification search.
 static int singular_verifying;
@@ -30,8 +30,9 @@ static int search_stop_requested(void) {
     if (options.max_nodes && nodes_searched >= options.max_nodes) aborted = 1;
     if (!aborted && stop_hook && (nodes_searched & 1023ULL) == 0 &&
         stop_hook(stop_context)) aborted = 1;
-    if (options.max_time_ms && (nodes_searched & 1023ULL) == 0 &&
-        (double)(clock() - search_start) * 1000.0 / CLOCKS_PER_SEC >= options.max_time_ms)
+    // A scalar network must not overrun short budgets by 1024 expensive nodes.
+    if (options.max_time_ms && (nodes_searched & 63ULL) == 0 &&
+        cce_now_ms() - search_start_ms >= options.max_time_ms)
         aborted = 1;
     return aborted;
 }
@@ -241,6 +242,18 @@ static void pick_next_move(MoveList *move_list, int move_index, int move_scores[
 // One live metadata record follows the existing single-threaded search.
 static MoveState search_position;
 
+// Probes and verification searches share the deferred legality path.
+static int search_make_legal(Move move, Bitboard pieces[12], Bitboard occupancy[3],
+                             int *side, int *ep, int *castle, int ply, MoveState *state) {
+    if (!make_move_unchecked_state(move, pieces, occupancy, side, ep, castle, ply, state)) return 0;
+    if (!move_is_legal_after_make(move, pieces, occupancy)) {
+        unmake_move_state(move, pieces, occupancy, side, ep, castle, ply, state);
+        return 0;
+    }
+    cce_nnue_commit(move, ply);
+    return 1;
+}
+
 static int quiescence(int alpha, int beta, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_square, int castle_rights, int ply, int halfmove, int null_active) {
     nodes_searched++;
     stats.qnodes++;
@@ -254,11 +267,11 @@ static int quiescence(int alpha, int beta, Bitboard pieces[12], Bitboard occupan
     if (ply >= MAX_PLY - 1) {
         if (checked) {
             MoveList evasions;
-            generate_all_moves(&evasions, pieces, occupancy, side_to_move, ep_square, castle_rights);
+            generate_pseudo_legal_moves(&evasions, pieces, occupancy, side_to_move, ep_square, castle_rights);
             int best = -INFINITY_SCORE;
             for (int i = 0; i < evasions.count; i++) {
                 Move m = evasions.moves[i];
-                if (make_move_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply, &search_position)) {
+                if (search_make_legal(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply, &search_position)) {
                     int score = -evaluate(pieces, occupancy, side_to_move);
                     unmake_move_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply, &search_position);
                     if (score > best) best = score;
@@ -278,7 +291,7 @@ static int quiescence(int alpha, int beta, Bitboard pieces[12], Bitboard occupan
 
     MoveList pseudo_moves;
     // In check, quiet evasions are still required.
-    if (checked) generate_all_moves(&pseudo_moves, pieces, occupancy, side_to_move, ep_square, castle_rights);
+    if (checked) generate_pseudo_legal_moves(&pseudo_moves, pieces, occupancy, side_to_move, ep_square, castle_rights);
     else generate_tactical_moves(&pseudo_moves, pieces, occupancy, side_to_move, ep_square);
 
     int move_scores[sizeof(pseudo_moves.moves) / sizeof(pseudo_moves.moves[0])];
@@ -296,9 +309,15 @@ static int quiescence(int alpha, int beta, Bitboard pieces[12], Bitboard occupan
         int next_halfmove = (MOVE_PIECE(m) == P || MOVE_PIECE(m) == p || MOVE_IS_CAPTURE(m))
                             ? 0 : halfmove + 1;
 
-        // make_move rolls back illegal moves itself.
-        if (!make_move_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply, &search_position))
+        // Apply only the next ordered candidate; unplayed moves get no legality test.
+        if (!make_move_unchecked_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply, &search_position))
             continue;
+        // Reject self-check before counting legal moves or entering a child.
+        if (!move_is_legal_after_make(m, pieces, occupancy)) {
+            unmake_move_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply, &search_position);
+            continue;
+        }
+        cce_nnue_commit(m, ply);
         legal_moves_count++;
 
         int score = -quiescence(-beta, -alpha, pieces, occupancy, side_to_move, ep_square, castle_rights, ply + 1, next_halfmove, null_active);
@@ -342,7 +361,7 @@ static int verify_singular(MoveList *moves, Move candidate, int depth,
             int next_side = side, next_ep = ep, next_castle = castle;
             int next_halfmove = (MOVE_PIECE(m) == P || MOVE_PIECE(m) == p || MOVE_IS_CAPTURE(m))
                                 ? 0 : halfmove + 1;
-            if (!make_move_state(m, pieces, occupancy, &next_side, &next_ep, &next_castle, ply, &search_position)) continue;
+            if (!search_make_legal(m, pieces, occupancy, &next_side, &next_ep, &next_castle, ply, &search_position)) continue;
             int score;
             if (pass == 0) {
                 found = 1;
@@ -408,7 +427,7 @@ static int negamax(int alpha, int beta, int depth, Bitboard pieces[12],
     }
 
     MoveList moves;
-    generate_all_moves(&moves, pieces, occupancy, side_to_move, ep_square, castle_rights);
+    generate_pseudo_legal_moves(&moves, pieces, occupancy, side_to_move, ep_square, castle_rights);
 
     // avoid PV/check/null paths, near-draw positions,
     // and mate score windows. Never treat stalemate as a static win.
@@ -504,8 +523,14 @@ static int negamax(int alpha, int beta, int depth, Bitboard pieces[12],
         int next_halfmove = MOVE_PIECE(m) == P || MOVE_PIECE(m) == p || MOVE_IS_CAPTURE(m)
                             ? 0 : halfmove + 1;
         // the current ply's undo record survives child search at ply + 1.
-        if (!make_move_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply, &search_position))
+        if (!make_move_unchecked_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply, &search_position))
             continue;
+        // Reject self-check before counting legal moves or entering a child.
+        if (!move_is_legal_after_make(m, pieces, occupancy)) {
+            unmake_move_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, ply, &search_position);
+            continue;
+        }
+        cce_nnue_commit(m, ply);
         legal_count++;
         int child_depth = depth - 1 + (m == singular_move);
         int child_pv = pv_node && legal_count == 1;
@@ -599,7 +624,7 @@ static RootResult search_root(int alpha, int beta, int depth,
     RootResult result = {0, -INFINITY_SCORE, 0};
     pv_length[0] = 0;
     MoveList moves;
-    generate_all_moves(&moves, pieces, occupancy, side_to_move, ep_square, castle_rights);
+    generate_pseudo_legal_moves(&moves, pieces, occupancy, side_to_move, ep_square, castle_rights);
     int move_scores[sizeof(moves.moves) / sizeof(moves.moves[0])];
     for (int i = 0; i < moves.count; i++)
         move_scores[i] = score_move(moves.moves[i], pieces, preferred, 0, side_to_move);
@@ -609,8 +634,14 @@ static RootResult search_root(int alpha, int beta, int depth,
         int next_halfmove = MOVE_PIECE(m) == P || MOVE_PIECE(m) == p || MOVE_IS_CAPTURE(m)
                             ? 0 : game_state.halfmove_clock + 1;
         // do not copy the 12 piece bitboards for every candidate.
-        if (!make_move_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, 0, &search_position))
+        if (!make_move_unchecked_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, 0, &search_position))
             continue;
+        // Reject self-check before counting legal moves or entering a child.
+        if (!move_is_legal_after_make(m, pieces, occupancy)) {
+            unmake_move_state(m, pieces, occupancy, &side_to_move, &ep_square, &castle_rights, 0, &search_position);
+            continue;
+        }
+        cce_nnue_commit(m, 0);
         result.legal++;
         int score;
         int child_follow = previous_pv_length > 0 && m == previous_pv[0];
@@ -651,13 +682,14 @@ Move search_best_move_with_state(Bitboard pieces[12], Bitboard occupancy[3],
     memset(&stats, 0, sizeof(stats));
     aborted = 0;
     singular_verifying = 0;
-    search_start = clock();
+    search_start_ms = cce_now_ms();
     clear_search_heuristics();
     if (!tt_is_initialized()) init_tt(16);
     reset_tt_stats();
     if (search_draw_claim_available(pieces, occupancy, side_to_move, ep_square,
                                     castle_rights, state) && options.claim_draw) {
         if (options.verbose) puts("Draw claim available: threefold repetition or fifty-move rule.");
+        stats.elapsed_ms = cce_now_ms() - search_start_ms;
         return 0;
     }
     move_state_init(&search_position, pieces, side_to_move, ep_square, castle_rights,
@@ -724,6 +756,7 @@ Move search_best_move_with_state(Bitboard pieces[12], Bitboard occupancy[3],
     stats.best_move = best_move;
     if (options.verbose && stats.stopped)
         printf("Search stopped after depth %d (node/time limit)\n", stats.completed_depth);
+    stats.elapsed_ms = cce_now_ms() - search_start_ms;
     return best_move;
 }
 

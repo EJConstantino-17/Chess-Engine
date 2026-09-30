@@ -213,7 +213,8 @@ void generate_piece_moves(MoveList *move_list, int piece_type, Bitboard piece_bb
     }
 }
 
-void generate_all_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq, int castle_rights) {
+// Geometry and occupancy only; search validates played moves.
+void generate_pseudo_legal_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq, int castle_rights) {
     move_list->count = 0;
 
     int own_color   = side_to_move;
@@ -230,6 +231,12 @@ void generate_all_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occup
     generate_piece_moves(move_list, K + offset, pieces[K + offset], occupancy[own_color], capturable_enemy, occupancy[BOTH]);
 
     generate_castling_moves(move_list, pieces, occupancy, side_to_move, castle_rights);
+}
+
+// Retain the public name used by game, book, and perft callers.
+void generate_all_moves(MoveList *list, Bitboard pieces[12], Bitboard occupancy[3],
+                        int side, int ep, int castle) {
+    generate_pseudo_legal_moves(list, pieces, occupancy, side, ep, castle);
 }
 
 // Avoid generating quiet piece moves and castling at q-nodes.
@@ -266,42 +273,21 @@ void generate_tactical_moves(MoveList *move_list, Bitboard pieces[12], Bitboard 
     }
 }
 
-void generate_castling_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int castle_rights) {
-    if (side_to_move == WHITE) {
-        if ((castle_rights & WK_RIGHT) && TEST_BIT(pieces[K], E1) && TEST_BIT(pieces[R], H1) && !(occupancy[BOTH] & WK_PATH)) {
-            if (!is_square_attacked(E1, pieces, occupancy, BLACK) &&
-                !is_square_attacked(F1, pieces, occupancy, BLACK) &&
-                !is_square_attacked(G1, pieces, occupancy, BLACK)) {
-                add_move(move_list, ENCODE_MOVE(E1, G1, K, 0, 0, 0, 0, 1));
-            }
-        }
-
-        if ((castle_rights & WQ_RIGHT) && TEST_BIT(pieces[K], E1) && TEST_BIT(pieces[R], A1) && !(occupancy[BOTH] & WQ_PATH)) {
-            if (!is_square_attacked(E1, pieces, occupancy, BLACK) &&
-                !is_square_attacked(D1, pieces, occupancy, BLACK) &&
-                !is_square_attacked(C1, pieces, occupancy, BLACK)) {
-                add_move(move_list, ENCODE_MOVE(E1, C1, K, 0, 0, 0, 0, 1));
-            }
-        }
+// Castling candidates need rights, king/rook presence, and empty paths.
+void generate_castling_moves(MoveList *list, Bitboard pieces[12], Bitboard occupancy[3],
+                             int side, int rights) {
+    if (side == WHITE) {
+        if ((rights & WK_RIGHT) && TEST_BIT(pieces[K], E1) && TEST_BIT(pieces[R], H1) &&
+            !(occupancy[BOTH] & WK_PATH)) add_move(list, ENCODE_MOVE(E1,G1,K,0,0,0,0,1));
+        if ((rights & WQ_RIGHT) && TEST_BIT(pieces[K], E1) && TEST_BIT(pieces[R], A1) &&
+            !(occupancy[BOTH] & WQ_PATH)) add_move(list, ENCODE_MOVE(E1,C1,K,0,0,0,0,1));
     } else {
-        if ((castle_rights & BK_RIGHT) && TEST_BIT(pieces[k], E8) && TEST_BIT(pieces[r], H8) && !(occupancy[BOTH] & BK_PATH)) {
-            if (!is_square_attacked(E8, pieces, occupancy, WHITE) &&
-                !is_square_attacked(F8, pieces, occupancy, WHITE) &&
-                !is_square_attacked(G8, pieces, occupancy, WHITE)) {
-                add_move(move_list, ENCODE_MOVE(E8, G8, k, 0, 0, 0, 0, 1));
-            }
-        }
-
-        if ((castle_rights & BQ_RIGHT) && TEST_BIT(pieces[k], E8) && TEST_BIT(pieces[r], A8) && !(occupancy[BOTH] & BQ_PATH)) {
-            if (!is_square_attacked(E8, pieces, occupancy, WHITE) &&
-                !is_square_attacked(D8, pieces, occupancy, WHITE) &&
-                !is_square_attacked(C8, pieces, occupancy, WHITE)) {
-                add_move(move_list, ENCODE_MOVE(E8, C8, k, 0, 0, 0, 0, 1));
-            }
-        }
+        if ((rights & BK_RIGHT) && TEST_BIT(pieces[k], E8) && TEST_BIT(pieces[r], H8) &&
+            !(occupancy[BOTH] & BK_PATH)) add_move(list, ENCODE_MOVE(E8,G8,k,0,0,0,0,1));
+        if ((rights & BQ_RIGHT) && TEST_BIT(pieces[k], E8) && TEST_BIT(pieces[r], A8) &&
+            !(occupancy[BOTH] & BQ_PATH)) add_move(list, ENCODE_MOVE(E8,C8,k,0,0,0,0,1));
     }
 }
-
 
 static const int castling_rights_update[64] = {
     13, 15, 15, 15, 12, 15, 15, 14,
@@ -341,7 +327,8 @@ static Bitboard castle_rook_squares(int target) {
     return (1ULL << from) | (1ULL << to);
 }
 
-int make_move_state(Move move, Bitboard pieces[12], Bitboard occupancy[3],
+// Apply a generated candidate; NNUE is prepared but not committed.
+int make_move_unchecked_state(Move move, Bitboard pieces[12], Bitboard occupancy[3],
                     int *side, int *ep, int *castle, int ply, MoveState *state) {
     int src = MOVE_SRC(move), dst = MOVE_TARGET(move), piece = MOVE_PIECE(move);
     int promoted = MOVE_PROMOTED(move), capture = MOVE_IS_CAPTURE(move);
@@ -370,7 +357,6 @@ int make_move_state(Move move, Bitboard pieces[12], Bitboard occupancy[3],
     if (is_castle) {
         int valid_target = us == WHITE ? (dst == G1 || dst == C1) : (dst == G8 || dst == C8);
         int rook_from = dst == G1 ? H1 : dst == C1 ? A1 : dst == G8 ? H8 : A8;
-        int rook_to = dst == G1 ? F1 : dst == C1 ? D1 : dst == G8 ? F8 : D8;
         int right = dst == G1 ? 1 : dst == C1 ? 2 : dst == G8 ? 4 : 8;
         Bitboard path = dst == G1 ? ((1ULL << F1) | (1ULL << G1)) :
                         dst == C1 ? ((1ULL << B1) | (1ULL << C1) | (1ULL << D1)) :
@@ -378,9 +364,7 @@ int make_move_state(Move move, Bitboard pieces[12], Bitboard occupancy[3],
                                     ((1ULL << B8) | (1ULL << C8) | (1ULL << D8));
         if (!valid_target || piece != (us == WHITE ? K : k) || src != (us == WHITE ? E1 : E8) ||
             capture || promoted || is_ep || MOVE_IS_DOUBLE(move) || !(*castle & right) ||
-            !(pieces[us == WHITE ? R : r] & (1ULL << rook_from)) || occupancy[BOTH] & path ||
-            is_square_attacked(src, pieces, occupancy, them) ||
-            is_square_attacked(rook_to, pieces, occupancy, them)) return 0;
+            !(pieces[us == WHITE ? R : r] & (1ULL << rook_from)) || occupancy[BOTH] & path) return 0;
     }
     if (MOVE_IS_DOUBLE(move) && (piece % 6 != P || capture || promoted || is_ep ||
         src / 8 != (us == WHITE ? 1 : 6) || dst != src + (us == WHITE ? 16 : -16) ||
@@ -410,8 +394,43 @@ int make_move_state(Move move, Bitboard pieces[12], Bitboard occupancy[3],
         if (piece % 6 == P || captured != NO_PIECE) state->halfmove_clock = 0;
         else if (state->halfmove_clock < UINT32_MAX) ++state->halfmove_clock;
     }
-    int king_sq = get_lsb_index(pieces[us == WHITE ? K : k]);
-    if (king_sq < 0 || is_square_attacked(king_sq, pieces, occupancy, them)) {
+    return 1;
+}
+
+// Check the mover, not the opponent whose turn it now is.
+int move_is_legal_after_make(Move move, Bitboard pieces[12], Bitboard occupancy[3]) {
+    int piece = MOVE_PIECE(move), us = piece <= K ? WHITE : BLACK, them = us ^ 1;
+    int king = us == WHITE ? K : k;
+    int king_sq = get_lsb_index(pieces[king]);
+    if (king_sq < 0 || is_square_attacked(king_sq, pieces, occupancy, them)) return 0;
+    if (!MOVE_IS_CASTLING(move)) return 1;
+
+    // Castling also forbids an attacked starting or transit square. Temporarily
+    // reconstruct those occupancies; no callbacks, hash updates, or NNUE commits occur here.
+    int src = MOVE_SRC(move), dst = MOVE_TARGET(move);
+    int transit = dst > src ? src + 1 : src - 1;
+    int rook = us == WHITE ? R : r;
+    Bitboard king_delta = (1ULL << src) | (1ULL << dst);
+    Bitboard rook_delta = castle_rook_squares(dst);
+    toggle_piece(pieces, occupancy, king, king_delta, NULL);
+    toggle_piece(pieces, occupancy, rook, rook_delta, NULL);
+    int safe = !is_square_attacked(src, pieces, occupancy, them);
+    Bitboard transit_delta = (1ULL << src) | (1ULL << transit);
+    if (safe) {
+        toggle_piece(pieces, occupancy, king, transit_delta, NULL);
+        safe = !is_square_attacked(transit, pieces, occupancy, them);
+        toggle_piece(pieces, occupancy, king, transit_delta, NULL);
+    }
+    toggle_piece(pieces, occupancy, rook, rook_delta, NULL);
+    toggle_piece(pieces, occupancy, king, king_delta, NULL);
+    return safe;
+}
+
+// Compatibility API still rejects and rolls back illegal moves.
+int make_move_state(Move move, Bitboard pieces[12], Bitboard occupancy[3],
+                    int *side, int *ep, int *castle, int ply, MoveState *state) {
+    if (!make_move_unchecked_state(move, pieces, occupancy, side, ep, castle, ply, state)) return 0;
+    if (!move_is_legal_after_make(move, pieces, occupancy)) {
         unmake_move_state(move, pieces, occupancy, side, ep, castle, ply, state);
         return 0;
     }

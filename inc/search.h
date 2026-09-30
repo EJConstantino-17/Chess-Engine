@@ -31,7 +31,7 @@ typedef struct {
     int aspiration, pvs, null_move, lmr;
     int tt_score_cutoffs; // 0: safe move ordering only; 1: experimental score reuse
     uint64_t max_nodes;   // 0: no limit
-    int max_time_ms;       // 0: no limit (CPU time, single-threaded)
+    int max_time_ms;       // 0: no limit (elapsed wall time)
     int verbose;           // print per-depth search and TT statistics
     int claim_draw;        // interactive mode may claim; UCI always sends a move
     // switches permit identical-position A/B diagnostics.
@@ -46,6 +46,7 @@ typedef struct {
     uint64_t futility_skips, reverse_futility_cutoffs, razor_attempts, razor_cutoffs;
     uint64_t prefetches;
     uint64_t singular_attempts, singular_extensions, singular_refutations;
+    double elapsed_ms; // Measured search duration for UCI time/NPS.
     int completed_depth, score, stopped;
     Move best_move;
     Move pv[MAX_PLY];

@@ -40,7 +40,7 @@ typedef uint32_t Move;
 #define NO_PIECE -1
 #define MAX_PLY  256
 
-// Only irreversible fields; the caller retains the encoded move.
+//  Only irreversible fields; the caller retains the encoded move.
 typedef struct {
     uint64_t zobrist_key;
     uint32_t halfmove_clock;
@@ -90,6 +90,9 @@ void init_leaper_attacks(void);
 void generate_pawn_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq);
 void generate_piece_moves(MoveList *move_list, int piece_type, Bitboard piece_bb, Bitboard own_occ, Bitboard enemy_occ, Bitboard both_occ);
 void generate_castling_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int castle_rights);
+// No king-safety checks, including for castling candidates.
+void generate_pseudo_legal_moves(MoveList *list, Bitboard pieces[12], Bitboard occupancy[3],
+                                 int side, int ep, int castle);
 void generate_all_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq, int castle_rights);
 // Captures and promotions for qsearch outside check.
 void generate_tactical_moves(MoveList *move_list, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_sq);
@@ -120,6 +123,10 @@ static inline int is_square_attacked(int sq, Bitboard pieces[12],
 // Initialize once per root/FEN, then use one slot per live ply.
 void move_state_init(MoveState *state, Bitboard pieces[12], int side, int ep,
                      int castle, uint32_t halfmove);
+// Success means applied, not legal. Check before NNUE commit/evaluation.
+int make_move_unchecked_state(Move move, Bitboard pieces[12], Bitboard occupancy[3],
+                              int *side, int *ep, int *castle, int ply, MoveState *state);
+int move_is_legal_after_make(Move move, Bitboard pieces[12], Bitboard occupancy[3]);
 int make_move_state(Move move, Bitboard pieces[12], Bitboard occupancy[3],
                     int *side, int *ep, int *castle, int ply, MoveState *state);
 void unmake_move_state(Move move, Bitboard pieces[12], Bitboard occupancy[3],

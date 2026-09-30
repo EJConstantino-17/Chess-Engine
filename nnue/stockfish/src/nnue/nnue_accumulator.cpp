@@ -31,6 +31,10 @@
 #include "nnue_feature_transformer.h"  // IWYU pragma: keep
 #include "simd.h"
 
+// Diagnostic-only accounting; feature arithmetic and update selection stay intact.
+#if defined(CCE_NNUE_ONLY) && defined(CCE_NNUE_PROFILE)
+extern "C" { extern uint64_t cce_nnue_accumulator_paths[4]; }
+#endif
 namespace Stockfish::Eval::NNUE {
 
 using namespace SIMD;
@@ -99,7 +103,13 @@ void AccumulatorStack::evaluate(const Position&           pos,
     const usize last_black = find_last_usable_accumulator(BLACK);
 
     if (accumulators[last_white].computed[WHITE] && accumulators[last_black].computed[BLACK])
+    {
+#if defined(CCE_NNUE_ONLY) && defined(CCE_NNUE_PROFILE)
+        ++cce_nnue_accumulator_paths[last_white == size - 1 ? 0 : 1];
+        ++cce_nnue_accumulator_paths[last_black == size - 1 ? 0 : 1];
+#endif
         forward_update_incremental_both(pos, featureTransformer, last_white, last_black);
+    }
     else
     {
         evaluate_side(WHITE, pos, featureTransformer, cache, last_white);
@@ -116,7 +126,12 @@ void AccumulatorStack::evaluate_side(Color                     perspective,
     constexpr int MIN_PC_COUNT_HYBRID = 15;
 
     if (accumulators[last_usable_accum].computed[perspective])
+    {
+#if defined(CCE_NNUE_ONLY) && defined(CCE_NNUE_PROFILE)
+        ++cce_nnue_accumulator_paths[last_usable_accum == size - 1 ? 0 : 1];
+#endif
         forward_update_incremental(perspective, pos, featureTransformer, last_usable_accum);
+    }
 
     else
     {
@@ -129,11 +144,17 @@ void AccumulatorStack::evaluate_side(Color                     perspective,
             && dirtyPiece.add_sq == SQ_NONE  // excludes castling
         )
         {
+#if defined(CCE_NNUE_ONLY) && defined(CCE_NNUE_PROFILE)
+            ++cce_nnue_accumulator_paths[3];
+#endif
             update_accumulator_hybrid(perspective, pos, featureTransformer, mut_latest(),
                                       accumulators[size - 2], cache);
             return;
         }
 
+#if defined(CCE_NNUE_ONLY) && defined(CCE_NNUE_PROFILE)
+        ++cce_nnue_accumulator_paths[2];
+#endif
         update_accumulator_refresh_cache(perspective, featureTransformer, pos, mut_latest(), cache);
         backward_update_incremental(perspective, pos, featureTransformer, last_usable_accum);
     }

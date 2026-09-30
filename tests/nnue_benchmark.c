@@ -125,6 +125,7 @@ static void bench(int fixed_ms) {
         cce_nnue_enable(backend);clear_tt();
         SearchOptions opt=search_get_options();opt.verbose=0;opt.max_time_ms=fixed_ms;opt.max_nodes=0;
         search_set_options(opt);
+        cce_nnue_reset_stats();
         clock_t begin=clock();Move m=search_best_move(b,o,side,ep,castle,fixed_ms?30:6);
         double seconds=(double)(clock()-begin)/CLOCKS_PER_SEC;
         SearchStats st=search_get_stats();
@@ -132,6 +133,13 @@ static void bench(int fixed_ms) {
         if(m) { text[0]='a'+MOVE_SRC(m)%8;text[1]='1'+MOVE_SRC(m)/8;text[2]='a'+MOVE_TARGET(m)%8;text[3]='1'+MOVE_TARGET(m)/8;
             if(MOVE_PROMOTED(m)) { text[4]="pnbrqk"[MOVE_PROMOTED(m)%6];text[5]=0; } }
         printf("%s,%s,%u,%d,%d,%s,%" PRIu64 ",%" PRIu64 ",%.6f,%.0f\n",fixed_ms?"fixed_time":"fixed_depth",backend?"NNUE":"PeSTO",i,st.completed_depth,st.score,text,st.nodes,st.qnodes,seconds,seconds>0?st.nodes/seconds:0);
+        if (backend && cce_nnue_profile_enabled()) {
+            CCENNUEStats nn=cce_nnue_get_stats();
+            printf("accumulator,%s,%u,evals=%" PRIu64 ",resyncs=%" PRIu64 ",commits=%" PRIu64
+                   ",cached=%" PRIu64 ",incremental=%" PRIu64 ",refresh=%" PRIu64 ",hybrid=%" PRIu64 "\n",
+                   cce_nnue_build_profile(),i,nn.evaluations,nn.resyncs,nn.commits,
+                   nn.cached,nn.incremental,nn.refresh,nn.hybrid);
+        }
         require(!memcmp(b,original,sizeof b),"benchmark restores CCE board");
         if(backend) validate(b,side);
     }

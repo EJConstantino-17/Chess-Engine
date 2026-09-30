@@ -10,15 +10,16 @@ import subprocess
 root = Path(__file__).resolve().parents[1]
 p = argparse.ArgumentParser()
 p.add_argument('--pesto-only', action='store_true')
-p.add_argument('--simd', choices=['scalar', 'avx2', 'neon'], default='scalar')
+p.add_argument('--simd', choices=['auto', 'scalar', 'avx2', 'neon'], default='auto')
 p.add_argument('--android-ndk', type=Path)
 p.add_argument('--sanitize', action='store_true')
+p.add_argument('--nnue-profile', action='store_true', help='Count accumulator paths for diagnostics.')
 p.add_argument('--output-dir', type=Path)
 p.add_argument('--jobs', type=int, default=4)
 a = p.parse_args()
 if a.jobs < 1:
     p.error('--jobs must be positive')
-if a.pesto_only and a.simd != 'scalar':
+if a.pesto_only and a.simd not in ('auto', 'scalar'):
     p.error('SIMD is only used by NNUE')
 if a.android_ndk and a.simd == 'avx2':
     p.error('Android ARM64 requires scalar or neon')
@@ -40,10 +41,29 @@ else:
 for compiler in [cc] + ([] if a.pesto_only else [cxx]):
     if not shutil.which(compiler):
         p.error(f'Compiler not found: {compiler}. Install a 64-bit GCC/G++ or Android NDK toolchain.')
+# 9/30/2026 15:29: Detect the compiler's native CPU features instead of silently using scalar NNUE.
+if a.simd == 'auto':
+    a.simd = 'scalar'
+    if not a.pesto_only:
+        if a.android_ndk:
+            a.simd = 'neon'
+        else:
+            probe = subprocess.run([cxx, '-march=native', '-dM', '-E', '-x', 'c++', '-'],
+                                   input='', text=True, capture_output=True)
+            if probe.returncode == 0:
+                if '#define __AVX2__ ' in probe.stdout:
+                    a.simd = 'avx2'
+                elif '#define __ARM_NEON' in probe.stdout:
+                    a.simd = 'neon'
+            else:
+                print('CPU feature probe unavailable; using portable scalar NNUE.')
+print('Evaluation build: ' + ('PeSTO' if a.pesto_only else 'NNUE ' + a.simd.upper()))
 if a.sanitize:
     common += ['-O1', '-g', '-fsanitize=address,undefined', '-fno-omit-frame-pointer']
     link_flags += ['-fsanitize=address,undefined']
 mode = ('android' if a.android_ndk else 'native') + '-' + ('pesto' if a.pesto_only else a.simd) + ('-asan' if a.sanitize else '')
+if a.nnue_profile:
+    mode += '-profile'
 build = root / 'build' / mode
 if a.output_dir:
     output_dir = a.output_dir.resolve()
@@ -64,6 +84,8 @@ if 'clang' in Path(cxx).name:
     cpp_flags += ['-fconstexpr-steps=500000000']
 else:
     cpp_flags += ['-fconstexpr-ops-limit=500000000']
+if a.nnue_profile:
+    cpp_flags += ['-DCCE_NNUE_PROFILE']
 if not a.sanitize:
     cpp_flags += ['-DNDEBUG']
 if a.simd == 'avx2':

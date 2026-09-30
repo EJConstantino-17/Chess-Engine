@@ -19,3 +19,6 @@ lichess_db_puzzle.csv
 engine_diagnostics.c
 chess-openings/
 head_to_head.py
+cce_engine
+benchmarks/
+examples/

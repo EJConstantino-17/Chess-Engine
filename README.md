@@ -10,7 +10,7 @@ Use a 64-bit C11 and C++17 toolchain (GCC/G++ or Clang/Clang++) and Python 3.8+.
 python tools\build.py
 ```
 
-This creates `cce_engine.exe`, `engine_diagnostics.exe`, and `nnue_benchmark.exe`. For an AVX2-capable x86-64 CPU, add `--simd avx2`; otherwise retain the portable scalar default. Close running engine processes before rebuilding on Windows.
+This creates `cce_engine.exe`, `engine_diagnostics.exe`, and `nnue_benchmark.exe`. The builder automatically selects native AVX2/NEON when supported. Use `--simd scalar` for a portable build or `--simd avx2` to explicitly request AVX2. Close running engine processes before rebuilding on Windows.
 
 On Linux, use `make -j4 all diagnostics nnue-test` or `python3 tools/build.py`. On Termux, install `clang` and `python`, then run `CC=clang CXX=clang++ python tools/build.py --simd neon` on ARM64. C sources include project headers relative to their own directories. Keep matching versions of `src`, `inc`, `nnue`, `tools`, and `tests` together.
 
@@ -53,7 +53,7 @@ setoption name UseNNUE value true
 
 `EvalFile` and `UseNNUE` are available in NNUE builds. Select a readable network path, then enable `UseNNUE`; false selects PeSTO. Successful evaluation changes clear the TT. A failed reload preserves the previously loaded network.
 
-`Hash` is in MiB (1–1024). `OwnBook` defaults to true. The indexed book is read from `BookIndex` relative to the engine's working directory; if no valid index is found, the engine tries `BookFile` and its small built-in fallback. `Move Time Cap` defaults to 2000 milliseconds for clock-based searches; `0` removes that extra cap. `go movetime` specifies its own duration. These search times use process CPU time. The engine does not implement a UCI Elo or strength-limiting option.
+`Hash` is in MiB (1–1024). `OwnBook` defaults to true. The indexed book is read from `BookIndex` relative to the engine's working directory; if no valid index is found, the engine tries `BookFile` and its small built-in fallback. `Move Time Cap` defaults to 2000 milliseconds for clock-based searches; `0` removes that extra cap. `go movetime` specifies its own duration. These search times use elapsed wall time. The engine does not implement a UCI Elo or strength-limiting option.
 
 ## Play in the terminal
 
@@ -144,3 +144,15 @@ For consistent results, compare completed depths and use the same executable, ti
 The NNUE-enabled executable incorporates GPLv3-or-later Stockfish source. Preserve the upstream authors and license notices, distribute under compatible GPLv3 terms, and provide corresponding source. See [upstream provenance](nnue/stockfish/UPSTREAM.md).
 
 Move-state API and a pure C ply-stack example: [STATE_UPDATES.md](STATE_UPDATES.md).
+
+Pseudo-legal generation and deferred search legality: [PSEUDO_LEGAL_SEARCH.md](PSEUDO_LEGAL_SEARCH.md).
+
+Native builds now detect AVX2/NEON automatically. For an explicit x86 AVX2
+build use `python tools/build.py --simd avx2`; for a portable binary use
+`--simd scalar`. AVX2 binaries require an AVX2-capable CPU. Android ARM64
+builds default to NEON. `make SIMD=auto` provides the same native selection.
+
+NNUE performance profiling: `python tools/build.py --nnue-profile`, then
+run `nnue_benchmark` with the network and `--bench`. This reports live
+evaluation, resync, and accumulator-path counts. Profiling is disabled in
+normal builds. UCI search output now includes elapsed time, NPS, and PV.

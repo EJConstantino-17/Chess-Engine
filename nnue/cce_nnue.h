@@ -4,8 +4,17 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* 9/30/2026 12:05: C interface to the pinned Stockfish NNUE implementation. */
+/* C interface to the pinned Stockfish NNUE implementation. */
 #ifdef CCE_NNUE
+/* Counters expose actual accumulator paths during a measured search. */
+typedef struct {
+    uint64_t evaluations, resyncs, commits;
+    uint64_t cached, incremental, refresh, hybrid;
+} CCENNUEStats;
+void cce_nnue_reset_stats(void);
+CCENNUEStats cce_nnue_get_stats(void);
+int cce_nnue_profile_enabled(void);
+const char *cce_nnue_build_profile(void);
 int cce_nnue_load(const char *path);
 void cce_nnue_init(void);
 int cce_nnue_enabled(void);

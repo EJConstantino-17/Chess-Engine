@@ -14,6 +14,10 @@
 #include <sstream>
 #include <string>
 
+// Perspective path counters are incremented by the unchanged NNUE algorithms.
+extern "C" {
+uint64_t cce_nnue_accumulator_paths[4] = {};
+}
 namespace {
 using namespace Stockfish;
 using namespace Stockfish::Eval::NNUE;
@@ -27,6 +31,7 @@ struct Frame { unsigned generation = 0; unsigned depth = 0; uint32_t move = 0; }
 std::array<Frame, 256> frames;
 unsigned generation = 1, depth = 0;
 uint64_t updates = 0;
+CCENNUEStats performance = {};
 bool active = false, valid = false, initialized = false;
 std::string error;
 constexpr Piece mapping[12] = {W_PAWN,W_KNIGHT,W_BISHOP,W_ROOK,W_QUEEN,W_KING,
@@ -60,6 +65,9 @@ bool same(const uint64_t b[12], int side) {
 }
 bool sync(const uint64_t b[12], int side, int ep, int castle, bool force=false) {
     if(!force && same(b,side)) return true;
+#ifdef CCE_NNUE_PROFILE
+    ++performance.resyncs;
+#endif
     ++generation; depth=0; valid=false; accum->reset();
     auto err=pos.set(fen(b,side,ep,castle),false,&states[0]);
     if(err) { error=err->what(); return false; }
@@ -80,7 +88,35 @@ void init_tables() {
 }
 
 extern "C" {
-/* 9/30/2026 12:05: Load transactionally; a rejected file cannot damage the active net. */
+/* Load transactionally; a rejected file cannot damage the active net. */
+void cce_nnue_reset_stats(void) {
+    performance = {};
+    std::fill(std::begin(cce_nnue_accumulator_paths), std::end(cce_nnue_accumulator_paths), 0);
+}
+CCENNUEStats cce_nnue_get_stats(void) {
+    CCENNUEStats result = performance;
+    result.cached = cce_nnue_accumulator_paths[0];
+    result.incremental = cce_nnue_accumulator_paths[1];
+    result.refresh = cce_nnue_accumulator_paths[2];
+    result.hybrid = cce_nnue_accumulator_paths[3];
+    return result;
+}
+int cce_nnue_profile_enabled(void) {
+#ifdef CCE_NNUE_PROFILE
+    return 1;
+#else
+    return 0;
+#endif
+}
+const char *cce_nnue_build_profile(void) {
+#if defined(USE_AVX2)
+    return "AVX2";
+#elif defined(USE_NEON)
+    return "NEON";
+#else
+    return "SCALAR";
+#endif
+}
 int cce_nnue_load(const char *path) {
     if(!path || !*path) { error="empty network path"; return 0; }
     NNUEFileInfo info; char description[1025];
@@ -126,6 +162,9 @@ int cce_nnue_raw(const uint64_t b[12], int side, int fresh) {
         return net->evaluate(test,*a,*c);
     }
     if(!sync(b,side,-1,0)) return 0;
+#ifdef CCE_NNUE_PROFILE
+    ++performance.evaluations;
+#endif
     return net->evaluate(pos,*accum,*cache);
 }
 int cce_nnue_validate(const uint64_t b[12],int side) {
@@ -139,7 +178,7 @@ int cce_nnue_validate(const uint64_t b[12],int side) {
     return incremental==rebuilt && accum->latest().accumulation==fresh->latest().accumulation
         && accum->latest().psqtAccumulation==fresh->latest().psqtAccumulation;
 }
-/* 9/30/2026 12:05: Convert raw NNUE internal units with upstream's material-dependent CP model.
+/* Convert raw NNUE internal units with upstream's material-dependent CP model.
    CCE retains its own draw rules; Stockfish optimism and rule50 damping are not applied. */
 int cce_nnue_evaluate(const uint64_t b[12], int side) {
     int raw=cce_nnue_raw(b,side,0);
@@ -148,7 +187,7 @@ int cce_nnue_evaluate(const uint64_t b[12], int side) {
     double a=(((-142.72052667*m+372.35176398)*m-340.71073572)*m)+415.23490212;
     return std::clamp(int(std::round(100.0*raw/a)),-20000,20000);
 }
-/* 9/30/2026 12:05: Prepare before mutation; commit only after CCE confirms legality. */
+/* Prepare before mutation; commit only after CCE confirms legality. */
 void cce_nnue_prepare(uint32_t m,const uint64_t b[12],int side,int ep,int castle,int ply) {
     if(!cce_nnue_enabled() || ply<0 || ply>=256) return;
     frames[ply]={};
@@ -174,6 +213,9 @@ void cce_nnue_commit(uint32_t m,int ply) {
     pos.do_move(sm,states[depth],pos.gives_check(sm),dirties,nullptr,nullptr);
     frames[ply]={generation,depth,m};
     ++updates;
+#ifdef CCE_NNUE_PROFILE
+    ++performance.commits;
+#endif
 }
 void cce_nnue_unmake(uint32_t m,int ply) {
     if(!cce_nnue_enabled() || ply<0 || ply>=256) return;

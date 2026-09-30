@@ -3,8 +3,9 @@
 CC = gcc
 CXX = g++
 NNUE ?= 1
-SIMD ?= scalar
-BUILD ?= build/$(NNUE)-$(SIMD)
+SIMD ?= auto
+NNUE_PROFILE ?= 0
+BUILD ?= build/$(NNUE)-$(SIMD)$(if $(filter 1,$(NNUE_PROFILE)),-profile,)
 CPPFLAGS += -Iinc -D_GNU_SOURCE
 CFLAGS ?= -O3 -std=c11 -Wall -Wextra
 CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra
@@ -23,17 +24,25 @@ else
 LDFLAGS += -Wl,--gc-sections
 endif
 endif
-ifeq ($(SIMD),avx2)
-CXXFLAGS += -mavx2 -DUSE_AVX2 -DUSE_SSE2 -DUSE_SSSE3 -DUSE_SSE41
-endif
-ifeq ($(SIMD),neon)
-CXXFLAGS += -DUSE_NEON
-endif
 ifeq ($(OS),Windows_NT)
 EXE = .exe
 PYTHON ?= python
 else
 PYTHON ?= python3
+endif
+# 9/30/2026 15:29: Match the Python builder's native SIMD selection; scalar remains explicit.
+ifeq ($(SIMD),auto)
+ifeq ($(NNUE),1)
+override SIMD := $(shell $(PYTHON) -c "import subprocess; p=subprocess.run([r'$(CXX)', '-march=native', '-dM', '-E', '-x', 'c++', '-'], input='', text=True, capture_output=True); print('avx2' if p.returncode==0 and '__AVX2__ ' in p.stdout else 'neon' if p.returncode==0 and '__ARM_NEON' in p.stdout else 'scalar')")
+else
+SIMD := scalar
+endif
+endif
+ifeq ($(SIMD),avx2)
+CXXFLAGS += -mavx2 -DUSE_AVX2 -DUSE_SSE2 -DUSE_SSSE3 -DUSE_SSE41
+endif
+ifeq ($(SIMD),neon)
+CXXFLAGS += -DUSE_NEON
 endif
 ENGINE_SRC = $(wildcard src/*.c)
 CORE_SRC = $(filter-out src/main.c src/uci.c src/game_loop.c src/puzzle.c src/opening_book.c,$(ENGINE_SRC))
@@ -43,6 +52,9 @@ SF_SRC = $(SF)/attacks.cpp $(SF)/position.cpp $(SF)/misc.cpp $(SF)/memory.cpp \
  $(wildcard $(SF)/nnue/features/*.cpp)
 ifeq ($(NNUE),1)
 CPPFLAGS += -DCCE_NNUE -DCCE_NNUE_ONLY
+ifeq ($(NNUE_PROFILE),1)
+CPPFLAGS += -DCCE_NNUE_PROFILE
+endif
 NNUE_OBJ = $(patsubst %.cpp,$(BUILD)/%.o,$(SF_SRC) nnue/cce_nnue.cpp nnue/sha256.cpp) $(BUILD)/nnue/network_file.o
 LINK = $(CXX)
 else
