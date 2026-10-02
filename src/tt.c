@@ -15,6 +15,21 @@ size_t tt_size_entries = 0;
 static int zobrist_ready = 0;
 // counters are per search, independent of table contents.
 static TT_Stats tt_stats;
+static uint64_t mix_context(uint64_t value) {
+    value = (value ^ (value >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
+    value = (value ^ (value >> 27)) * UINT64_C(0x94d049bb133111eb);
+    return value ^ (value >> 31);
+}
+
+uint64_t tt_context_seed(uint64_t position_key, int halfmove_clock) {
+    return mix_context(position_key ^ UINT64_C(0x9e3779b97f4a7c15)) +
+           mix_context((uint64_t)halfmove_clock + UINT64_C(0xd1b54a32d192ed03));
+}
+
+uint64_t tt_context_add_position(uint64_t context, uint64_t previous_key) {
+    // Mix each position before combining: raw XOR cancels unchanged pieces.
+    return mix_context(context + mix_context(previous_key) + UINT64_C(0x9e3779b97f4a7c15));
+}
 void reset_tt_stats(void) { memset(&tt_stats, 0, sizeof(tt_stats)); }
 TT_Stats get_tt_stats(void) { return tt_stats; }
 
@@ -177,54 +192,47 @@ void free_tt(void) {
     tt_size_entries = 0;
 }
 
-int read_tt(uint64_t key, int depth, int alpha, int beta, Move *tt_move, int *tt_score, int ply) {
+static int probe_bound(uint64_t key, int depth, int alpha, int beta, Move *tt_move,
+                       int *tt_score, int ply, int pv_node, int accept_deeper) {
+    if (tt_move) *tt_move = 0;
+    if (tt_score) *tt_score = 0;
     if (!tt_is_initialized()) return 0;
-
-    // a matching key can still have insufficient depth or a non-cutting bound.
-    tt_stats.probes++;
-    size_t index = key % tt_size_entries;
-    TT_Entry *entry = &tt_table[index];
-
-    if (entry->flag != 0 && entry->key == key) {
-        tt_stats.key_hits++;
-        *tt_move = entry->move;
-
-        // only reuse a score searched to this exact depth.
-        // Deeper entries remain useful as ordering hints, but substituting
-        // their horizon-dependent score changed the selected puzzle line.
-        if (entry->depth == depth) {
-            int score = entry->score;
-
-            if (score >= MATE_SCORE - MAX_PLY) score -= ply;
-            if (score <= -MATE_SCORE + MAX_PLY) score += ply;
-            
-            if (entry->flag == EXACT_BOUND) {
-                *tt_score = score;
-                tt_stats.score_hits++;
-                return 1;
-            }
-
-            if (entry->flag == LOWER_BOUND && score >= beta) {
-                *tt_score = score;
-                tt_stats.score_hits++;
-                return 1;
-            }
-
-            if (entry->flag == UPPER_BOUND && score <= alpha) {
-                *tt_score = score;
-                tt_stats.score_hits++;
-                return 1;
-            }
-            tt_stats.bound_misses++;
-        } else {
-            tt_stats.shallow_hits++;
-        }
+    ++tt_stats.probes;
+    const TT_Entry *entry = &tt_table[key % tt_size_entries];
+    if (!entry->flag || entry->key != key) return 0;
+    ++tt_stats.key_hits;
+    if (tt_move) *tt_move = entry->move;
+    if (entry->depth < depth || (!accept_deeper && entry->depth != depth)) {
+        ++tt_stats.shallow_hits;
+        return 0;
     }
-
+    // PV nodes keep searching their line; the matching move still orders first.
+    if (pv_node) return 0;
+    int score = entry->score;
+    if (score >= MATE_SCORE - MAX_PLY) score -= ply;
+    else if (score <= -MATE_SCORE + MAX_PLY) score += ply;
+    if (entry->flag == EXACT_BOUND ||
+        (entry->flag == LOWER_BOUND && score >= beta) ||
+        (entry->flag == UPPER_BOUND && score <= alpha)) {
+        if (tt_score) *tt_score = score;
+        ++tt_stats.score_hits;
+        return 1;
+    }
+    ++tt_stats.bound_misses;
     return 0;
 }
 
-void write_tt(uint64_t key, Move best_move, int score, int depth, int flag, int ply) {
+int tt_probe(uint64_t key, int depth, int alpha, int beta, Move *tt_move,
+             int *tt_score, int ply, int pv_node) {
+    return probe_bound(key, depth, alpha, beta, tt_move, tt_score, ply, pv_node, 1);
+}
+
+// Compatibility API retains the earlier equal-depth diagnostic behavior.
+int read_tt(uint64_t key, int depth, int alpha, int beta, Move *tt_move, int *tt_score, int ply) {
+    return probe_bound(key, depth, alpha, beta, tt_move, tt_score, ply, 0, 0);
+}
+
+void tt_store(uint64_t key, Move best_move, int score, int depth, int flag, int ply) {
     if (!tt_is_initialized()) return;
 
     size_t index = key % tt_size_entries;
@@ -242,4 +250,8 @@ void write_tt(uint64_t key, Move best_move, int score, int depth, int flag, int 
     entry->score = (int16_t) score;
     entry->depth = (int16_t) depth;
     entry->flag = (int8_t) flag;
+}
+
+void write_tt(uint64_t key, Move best_move, int score, int depth, int flag, int ply) {
+    tt_store(key, best_move, score, depth, flag, ply);
 }

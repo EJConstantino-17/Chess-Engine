@@ -11,17 +11,32 @@ root = Path(__file__).resolve().parents[1]
 p = argparse.ArgumentParser()
 p.add_argument('--pesto-only', action='store_true')
 p.add_argument('--simd', choices=['auto', 'scalar', 'avx2', 'neon'], default='auto')
-p.add_argument('--android-ndk', type=Path)
+p.add_argument('--android', '--android-arm64', action='store_true',
+               help='Build an Android ARM64 UCI executable using the Android NDK.')
+p.add_argument('--android-ndk', type=Path, help='NDK directory; also enables the Android ARM64 build.')
+p.add_argument('--android-api', type=int, default=26, help='Android API level (minimum 26; default 26).')
+p.add_argument('--termux', action='store_true', help='Build directly in ARM64 Termux using its Clang toolchain; no NDK needed.')
 p.add_argument('--sanitize', action='store_true')
 p.add_argument('--nnue-profile', action='store_true', help='Count accumulator paths for diagnostics.')
 p.add_argument('--output-dir', type=Path)
 p.add_argument('--jobs', type=int, default=4)
 a = p.parse_args()
+if a.termux and (a.android or a.android_ndk):
+    p.error('--termux cannot be combined with --android or --android-ndk')
+if a.android or a.android_ndk:
+    ndk_path = a.android_ndk or os.environ.get('ANDROID_NDK_HOME') or os.environ.get('ANDROID_NDK_ROOT')
+    if not ndk_path:
+        p.error('--android requires --android-ndk PATH or ANDROID_NDK_HOME/ANDROID_NDK_ROOT')
+    a.android_ndk = Path(ndk_path).expanduser().resolve()
+    if a.android_api < 26:
+        p.error('Android ARM64 builds require API 26 or newer')
+elif a.android_api != 26:
+    p.error('--android-api requires an NDK Android build; Termux uses its installed compiler API')
 if a.jobs < 1:
     p.error('--jobs must be positive')
 if a.pesto_only and a.simd not in ('auto', 'scalar'):
     p.error('SIMD is only used by NNUE')
-if a.android_ndk and a.simd == 'avx2':
+if (a.android_ndk or a.termux) and a.simd == 'avx2':
     p.error('Android ARM64 requires scalar or neon')
 common = ['-O3', '-Wall', '-Wextra', '-D_GNU_SOURCE', '-I' + str(root / 'inc')]
 link_flags = ['-Wl,-dead_strip'] if platform.system() == 'Darwin' and not a.android_ndk else ['-Wl,--gc-sections']
@@ -30,9 +45,16 @@ if a.android_ndk:
     toolchain = a.android_ndk / 'toolchains/llvm/prebuilt' / host / 'bin'
     suffix = '.exe' if os.name == 'nt' else ''
     cc, cxx = str(toolchain / ('clang' + suffix)), str(toolchain / ('clang++' + suffix))
-    common += ['--target=aarch64-linux-android26', '-fPIE']
-    link_flags += ['--target=aarch64-linux-android26', '-pie', '-static-libstdc++']
+    target = f'aarch64-linux-android{a.android_api}'
+    common += ['--target=' + target, '-fPIE']
+    link_flags += ['--target=' + target, '-pie', '-static-libstdc++']
     output_dir = root / 'build/android'
+    exe_suffix = ''
+elif a.termux:
+    cc, cxx = os.environ.get('CC', 'clang'), os.environ.get('CXX', 'clang++')
+    common += ['-fPIE']
+    link_flags += ['-pie']
+    output_dir = root / 'build/termux'
     exe_suffix = ''
 else:
     cc, cxx = os.environ.get('CC', 'gcc'), os.environ.get('CXX', 'g++')
@@ -40,11 +62,17 @@ else:
     exe_suffix = '.exe' if os.name == 'nt' else ''
 for compiler in [cc] + ([] if a.pesto_only else [cxx]):
     if not shutil.which(compiler):
-        p.error(f'Compiler not found: {compiler}. Install a 64-bit GCC/G++ or Android NDK toolchain.')
+        p.error(f'Compiler not found: {compiler}. In Termux run: pkg install clang python. Otherwise install GCC/G++ or the Android NDK.')
+if a.termux:
+    for compiler in [cc] + ([] if a.pesto_only else [cxx]):
+        probe = subprocess.run([compiler, '-dumpmachine'], text=True, capture_output=True)
+        target = probe.stdout.strip().lower()
+        if probe.returncode or not target.startswith('aarch64') or 'android' not in target:
+            p.error('--termux requires ARM64 Android Clang; run this option inside ARM64 Termux')
 if a.simd == 'auto':
     a.simd = 'scalar'
     if not a.pesto_only:
-        if a.android_ndk:
+        if a.android_ndk or a.termux:
             a.simd = 'neon'
         else:
             probe = subprocess.run([cxx, '-march=native', '-dM', '-E', '-x', 'c++', '-'],
@@ -60,7 +88,8 @@ print('Evaluation build: ' + ('PeSTO' if a.pesto_only else 'NNUE ' + a.simd.uppe
 if a.sanitize:
     common += ['-O1', '-g', '-fsanitize=address,undefined', '-fno-omit-frame-pointer']
     link_flags += ['-fsanitize=address,undefined']
-mode = ('android' if a.android_ndk else 'native') + '-' + ('pesto' if a.pesto_only else a.simd) + ('-asan' if a.sanitize else '')
+target_mode = f'android-arm64-api{a.android_api}' if a.android_ndk else ('termux-arm64' if a.termux else 'native')
+mode = target_mode + '-' + ('pesto' if a.pesto_only else a.simd) + ('-asan' if a.sanitize else '')
 if a.nnue_profile:
     mode += '-profile'
 build = root / 'build' / mode
@@ -95,6 +124,7 @@ tests = [] if a.android_ndk else [root / 'tests/engine_diagnostics.c']
 if not a.pesto_only and not a.android_ndk:
     tests.append(root / 'tests/nnue_benchmark.c')
     tests.append(root / 'tests/search_tree_benchmark.c')
+    tests.append(root / 'tests/tactical_probe.c')
 objects = {}
 def compile_source(source):
     obj = (build / source.relative_to(root)).with_suffix('.o')
@@ -111,7 +141,7 @@ def link(name, sources):
     output = output_dir / (name + exe_suffix)
     subprocess.run([linker, *[str(objects[s]) for s in sources], *link_flags, '-o', str(output)], check=True)
     print(f'Built {output}')
-link('chess_engine_arm64' if a.android_ndk else 'cce_engine', c_sources + cpp_sources)
+link('cce_engine_arm64' if a.android_ndk or a.termux else 'cce_engine', c_sources + cpp_sources)
 if not a.android_ndk:
     link('engine_diagnostics', [tests[0], *core_sources, *nnue_sources])
     if not a.pesto_only:
@@ -119,3 +149,4 @@ if not a.android_ndk:
 
 if not a.android_ndk and not a.pesto_only:
     link('search_tree_benchmark', [tests[2], *core_sources, *nnue_sources])
+    link('tactical_probe', [tests[3], *core_sources, *nnue_sources])

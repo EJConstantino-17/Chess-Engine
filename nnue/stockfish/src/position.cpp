@@ -64,7 +64,7 @@ static constexpr Piece Pieces[] = {W_PAWN, W_KNIGHT, W_BISHOP, W_ROOK, W_QUEEN, 
 
 
 // Returns an ASCII representation of the position
-// 9/30/2026 13:23: CCE supplies move generation, draw rules, and diagnostics.
+
 #ifndef CCE_NNUE_ONLY
 std::ostream& operator<<(std::ostream& os, const Position& pos) {
 
@@ -110,7 +110,7 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
 // Implements Marcel van Kervinck's cuckoo algorithm to detect repetition of positions
 // for 3-fold repetition draws. The algorithm uses two hash tables with Zobrist hashes
 // to allow fast detection of recurring positions. For details see:
-// http://web.archive.org/web/20201107002606/https://marcelk.net/2013-04-06/paper/upcoming-rep-v2.pdf
+
 
 // First and second hash functions for indexing the cuckoo tables
 inline int H1(Key h) { return h & 0x1fff; }
@@ -605,7 +605,7 @@ string Position::fen() const {
     if (!can_castle(ANY_CASTLING))
         ss << '-';
 
-    // 9/30/2026 13:23: Format the square without linking Stockfish's UCI engine.
+    
     ss << (ep_square() == SQ_NONE ? " - " : " " + std::string{char('a' + file_of(ep_square())), char('1' + rank_of(ep_square()))} + " ")
        << st->rule50 << " " << 1 + (gamePly - (sideToMove == BLACK)) / 2;
 
@@ -707,7 +707,7 @@ bool Position::legal(Move m) const {
 // Takes a random move and tests whether the move is
 // pseudo-legal. It is used to validate moves from TT that can be corrupted
 // due to SMP concurrent access or hash position key aliasing.
-// 9/30/2026 13:23: CCE supplies move generation, draw rules, and diagnostics.
+
 #ifndef CCE_NNUE_ONLY
 bool Position::pseudo_legal(const Move m) const {
 
@@ -1013,7 +1013,7 @@ void Position::do_move(Move                      m,
             st->minorPieceKey ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
     }
 
-// 9/30/2026 13:23: The bridge uses CCE's transposition table and passes nullptr.
+
 #ifndef CCE_NNUE_ONLY
     if (tt)
         prefetch(tt->first_entry(adjust_key50(k)));
@@ -1508,7 +1508,7 @@ bool Position::see_ge(Move m, int threshold) const {
 
 // Tests whether the position is drawn by 50-move rule
 // or by repetition. It does not detect stalemates.
-// 9/30/2026 13:23: CCE supplies move generation, draw rules, and diagnostics.
+
 #ifndef CCE_NNUE_ONLY
 bool Position::is_draw(int ply) const {
 

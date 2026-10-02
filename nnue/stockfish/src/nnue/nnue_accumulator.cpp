@@ -31,7 +31,7 @@
 #include "nnue_feature_transformer.h"  // IWYU pragma: keep
 #include "simd.h"
 
-// Diagnostic-only accounting; feature arithmetic and update selection stay intact.
+
 #if defined(CCE_NNUE_ONLY) && defined(CCE_NNUE_PROFILE)
 extern "C" { extern uint64_t cce_nnue_accumulator_paths[4]; }
 #endif

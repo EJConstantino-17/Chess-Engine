@@ -10,9 +10,9 @@ Use a 64-bit C11 and C++17 toolchain (GCC/G++ or Clang/Clang++) and Python 3.8+.
 python tools\build.py
 ```
 
-This creates `cce_engine.exe`, `engine_diagnostics.exe`, and `nnue_benchmark.exe`. The builder automatically selects native AVX2/NEON when supported. Use `--simd scalar` for a portable build or `--simd avx2` to explicitly request AVX2. Close running engine processes before rebuilding on Windows.
+This creates `cce_engine.exe`, `engine_diagnostics.exe`, `nnue_benchmark.exe`, `search_tree_benchmark.exe`, and `tactical_probe.exe`. The builder automatically selects native AVX2/NEON when supported. Use `--simd scalar` for a portable build or `--simd avx2` to explicitly request AVX2. Close running engine processes before rebuilding on Windows.
 
-On Linux, use `make -j4 all diagnostics nnue-test` or `python3 tools/build.py`. On Termux, install `clang` and `python`, then run `CC=clang CXX=clang++ python tools/build.py --simd neon` on ARM64. C sources include project headers relative to their own directories. Keep matching versions of `src`, `inc`, `nnue`, `tools`, and `tests` together.
+On Linux, use `make -j4 all diagnostics nnue-test` or `python3 tools/build.py`. On ARM64 Termux, use `python tools/build.py --termux` after installing `clang` and `python`; see the Termux instructions below. C sources include project headers relative to their own directories. Keep matching versions of `src`, `inc`, `nnue`, `tools`, and `tests` together.
 
 Put `nn-134a887f4c8f.nnue` in the working directory or set `CCE_NNUE_FILE` to its absolute path. The full loader verifies the SHA-256 and network structure before enabling NNUE. If loading fails, it reports the reason on stderr and falls back to PeSTO. To choose PeSTO at startup, set `CCE_EVAL=pesto`. See [NNUE setup and validation](nnue/README.md) for environment commands, format specifications, and tests.
 
@@ -112,13 +112,51 @@ The harness checks move and board restoration, perft, draw rules, and mate order
 
 ## Android
 
+### Build directly on your phone with Termux
+
+Keep the project in Termux's home directory (for example, `~/Chess-Engine`),
+where Android permits executable files. From the project root:
+
+```sh
+pkg install clang python
+python tools/build.py --termux --jobs 2
+export CCE_NNUE_FILE="$PWD/nn-134a887f4c8f.nnue"
+./build/termux/cce_engine_arm64 --uci
+```
+
+`--termux` uses the installed ARM64 Android `clang`/`clang++`, enables NEON NNUE
+by default, and needs no separate NDK. It also builds the diagnostic utilities
+in `build/termux`. Use `--pesto-only` for PeSTO or `--simd scalar` for scalar NNUE.
+`--jobs 2` limits parallel compiler memory use on the phone. `CC` and `CXX` may
+override the compiler paths, but both must target ARM64 Android.
+
+This executable uses Termux's runtime libraries and is intended to run inside
+Termux. For an executable to import into another Android UCI app, use the NDK
+build below. `--termux` cannot be combined with the NDK options; Android API
+selection comes from Termux's installed compiler. Keep the `.nnue` and `.cbk`
+in their configured readable locations; neither is embedded by the builder.
+
+### Cross-compile with the NDK
+
 The existing `build_android` and OEX scripts build the C-only PeSTO engine. To build an NNUE ARM64 executable with the NDK, run:
 
 ```powershell
-python tools\build.py --android-ndk "$env:ANDROID_NDK_HOME" --simd neon
+python tools\build.py --android --android-ndk "C:\Android\ndk\YOUR_NDK_VERSION"
 ```
 
-Its output is `build/android/chess_engine_arm64`. Import it into a GUI such as DroidFish that supports standalone Android UCI executables, then set `EvalFile` to a network path readable by the engine and enable `UseNNUE`. This NDK path requires device verification on the target Android phone. The external 94 MiB network is not bundled by the APK scripts.
+`--android` (alias `--android-arm64`) builds `build/android/cce_engine_arm64`
+for ARM64 / `arm64-v8a`, targeting Android 8.0+ (API 26). NNUE uses NEON by
+default; use `--simd scalar` for scalar inference or `--pesto-only` for PeSTO.
+You can omit `--android-ndk` if `ANDROID_NDK_HOME` or `ANDROID_NDK_ROOT` points
+to your installed NDK. Supplying `--android-ndk` alone also enables the Android
+build. Use `--android-api 28`, for example, to require Android 9+ instead, or
+`--output-dir PATH` to choose the output directory. AVX2 is rejected for Android.
+
+Import the executable into a GUI such as DroidFish that supports standalone
+Android UCI executables, then set `EvalFile` to a network path readable by the
+engine and enable `UseNNUE`. This command produces an executable, not an APK.
+Verify it on the target Android phone. The external 94 MiB network is not bundled
+by the APK scripts.
 
 To build an ARM64 UCI executable for a GUI that imports binaries, install Android NDK and run `.\build_android.ps1` (or `./build_android.sh` on Linux/macOS). Its output is `build/android/chess_engine_arm64`, not a Windows executable. For **Chessis**, which supports OEX engines, install Android SDK Platform 35, Android NDK, and JDK 17+, then run:
 
@@ -198,3 +236,79 @@ in `nnue/stockfish/UPSTREAM.md`.
 The root `.gitattributes` marks this dependency as `linguist-vendored`, so GitHub
 excludes it from language statistics after the file is committed and pushed.
 This classification does not change the dependency's license or remove its files.
+
+### TT and history benchmark
+
+Search defaults enable TT score cutoffs at adequate depth in non-PV nodes, bounded
+quiet-move history bonuses/maluses, and history-adjusted LMR. PV and mate windows
+continue searching their lines. Mate scores are normalized when stored/retrieved;
+TT keys retain reversible-history and halfmove-clock context. History is reset at
+each root search and retained across its iterative-deepening iterations.
+
+Run the repeatable comparison from the engine directory:
+
+```powershell
+python tests\tt_history_benchmark.py .\search_tree_benchmark.exe .\nn-134a887f4c8f.nnue --output benchmarks\tt_history_local
+```
+
+It runs current settings, TT only, history ordering only, history with LMR, and
+combined settings at depths 8/10 and budgets 100/200ms, twice each. It checks
+fixed-depth determinism and writes CSV plus `summary.json`. Timed depth is allowed
+to vary with scheduling. In this suite, fixed-depth searches have a 15-second /
+10-million-node safety cap: exclude incomplete rows from equal-depth comparisons.
+Individual runs use `search_tree_benchmark network.nnue 8 0 --tt-history` or
+`search_tree_benchmark network.nnue 30 200 --tt-history`. On Linux/Termux use
+executable names without `.exe` and forward slashes.
+
+## UCI pondering
+
+CCE supports `go ponder`, `ponderhit`, and `stop`. Enable pondering in your GUI;
+for lichess-bot set `engine.ponder: true`. The `Ponder` UCI option (default false)
+enables the predicted reply in `bestmove <move> ponder <reply>` when the completed
+PV contains that reply. The GUI starts pondering after applying both moves to
+the position; CCE does not start it automatically.
+
+A correct prediction sends `ponderhit`: CCE continues the same search and starts
+its move budget at that moment. A wrong prediction sends `stop`, consumes the old
+`bestmove`, sets the actual position, and starts a new search. While pondering,
+CCE does not send `bestmove` until `ponderhit` or `stop`, even if it reaches a
+depth/node limit or finds mate. It also answers `isready`. Instant book selection
+is bypassed for ponder searches; normal timed book moves are unchanged.
+
+Pondering uses CPU during the opponent's turn. A miss wastes that speculative
+work, though TT entries remain available. Keep concurrency at one for a bot on
+a single CPU budget. To validate the protocol after building:
+
+```powershell
+python tests\ponder_uci_test.py .\cce_engine.exe .\nn-134a887f4c8f.nnue
+```
+
+For a before/after comparison and a 250-ms ponder plus 100-ms move experiment:
+
+```powershell
+python tests\ponder_benchmark.py .\before\cce_engine.exe .\cce_engine.exe .\nn-134a887f4c8f.nnue > pondering.csv
+```
+
+## Tactical regression and puzzle benchmarks
+
+The diagnostic builder also creates `tactical_probe.exe`. Use it to compare search
+switches on one FEN; mode 0 uses defaults, 1 disables LMR, 2 null move, 3 QS
+Delta/SEE, 4 futility/RFP/razoring, 5 TT score cutoffs, 6 history tuning/LMR,
+7 PVS, 8 singular extension, and 9 disables all of those techniques.
+
+```powershell
+.\tactical_probe.exe .\nn-134a887f4c8f.nnue "YOUR FEN" 9 5000 0
+python -m pip install python-chess
+python tests\tactical_regression.py .\cce_engine.exe .\nn-134a887f4c8f.nnue
+python tests\tactical_suite.py --before .\before\cce_engine.exe --after .\cce_engine.exe --network .\nn-134a887f4c8f.nnue --output benchmarks\tactical
+```
+
+The suite downloads Harvey's mate-in-four collection, validates its SAN solutions,
+and searches each position with NNUE and the engine book disabled. Use `--dataset`
+to supply a local copy, `--depth` and `--time-ms` to change limits, or `--limit`
+for a subset. JSON/CSV retain each result and its legal PV; `summary.json` counts
+published first-move matches, reported mates, and complete mating lines. A different
+first move can also win; a single mating PV does not prove a forced mate against
+every defense. Exclude unfinished depths from fixed-depth speed comparisons.
+UCI reports actual mates as `score mate N`, with negative N for a losing mate;
+ordinary evaluation uses `score cp N`.

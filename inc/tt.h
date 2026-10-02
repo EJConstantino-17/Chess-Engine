@@ -22,6 +22,8 @@ extern uint64_t z_pieces[12][64], z_side, z_castle[16], z_enpassant[64];
 uint64_t zobrist_ep_key(Bitboard pieces[12], int side, int ep_square);
 void init_zobrist(void);
 uint64_t generate_zobrist_key(Bitboard pieces[12], int side_to_move, int ep_square, int castle_rights);
+uint64_t tt_context_seed(uint64_t position_key, int halfmove_clock);
+uint64_t tt_context_add_position(uint64_t context, uint64_t previous_key);
 
 void init_tt(size_t size_in_mb);
 void clear_tt(void);
@@ -43,6 +45,9 @@ Move lookup_tt_move(uint64_t key);
 Move tt_singular_candidate(uint64_t key, int minimum_depth);
 void prefetch_tt(uint64_t key);
 
+int tt_probe(uint64_t key, int depth, int alpha, int beta, Move *tt_move,
+             int *tt_score, int ply, int pv_node);
+void tt_store(uint64_t key, Move best_move, int score, int depth, int flag, int ply);
 int read_tt(uint64_t key, int depth, int alpha, int beta, Move *tt_move, int *tt_score, int ply);
 void write_tt(uint64_t key, Move best_move, int score, int depth, int flag, int ply);
 

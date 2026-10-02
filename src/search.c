@@ -7,18 +7,20 @@
 #include <stdio.h>
 #include "../inc/see.h"
 #include "../inc/lmr.h"
+#include "../inc/history.h"
 #include "../inc/timing.h"
 
 static Bitboard nodes_searched = 0;
 // options can be toggled independently for diagnostics.
 static SearchOptions options = {
-    .aspiration = 1, .pvs = 1, .null_move = 1, .lmr = 1,
+    .aspiration = 1, .pvs = 1, .null_move = 1, .lmr = 1, .tt_score_cutoffs = 1,
     .verbose = 1, .claim_draw = 1,
     .futility = 1, .reverse_futility = 1, .razoring = 1, .tt_prefetch = 1, .singular = 1,
-    .q_delta = 1, .q_see = 1, .dynamic_lmr = 1, .tuned_rfp = 1
+    .q_delta = 1, .q_see = 1, .dynamic_lmr = 1, .tuned_rfp = 1,
+    .history_tuning = 1, .history_lmr = 1
 };
 static SearchStats stats;
-static double search_start_ms;
+static double search_start_ms, search_deadline_ms;
 static int aborted;
 // prohibit recursive verification inside a verification search.
 static int singular_verifying;
@@ -32,6 +34,11 @@ void search_set_options(SearchOptions value) { options = value; }
 SearchOptions search_get_options(void) { return options; }
 SearchStats search_get_stats(void) { return stats; }
 
+void search_start_time_limit(int milliseconds) {
+    options.max_time_ms = milliseconds;
+    search_deadline_ms = cce_now_ms() + milliseconds;
+}
+
 static int search_stop_requested(void) {
     if (aborted) return 1;
     if (options.max_nodes && nodes_searched >= options.max_nodes) aborted = 1;
@@ -39,7 +46,7 @@ static int search_stop_requested(void) {
         stop_hook(stop_context)) aborted = 1;
     
     if (options.max_time_ms && (nodes_searched & 63ULL) == 0 &&
-        cce_now_ms() - search_start_ms >= options.max_time_ms)
+        cce_now_ms() >= search_deadline_ms)
         aborted = 1;
     return aborted;
 }
@@ -133,12 +140,12 @@ static uint64_t context_tt_key(uint64_t key, int halfmove, int ply) {
     if (!options.tt_score_cutoffs) return key;
     // TT results depend on both the halfmove clock and prior positions.
     // Include the reversible path to prevent reusing a score from another history.
-    uint64_t h = key ^ 0x9e3779b97f4a7c15ULL ^ (uint64_t)halfmove;
+    uint64_t h = tt_context_seed(key, halfmove);
     int remaining = halfmove;
     for (int i = ply - 1; i >= 1 && remaining > 0; i--, remaining--)
-        h = (h ^ path_keys[i]) * 0x100000001b3ULL;
+        h = tt_context_add_position(h, path_keys[i]);
     for (int i = game_state.count - 1 - (ply == 0); i >= 0 && remaining > 0; i--, remaining--)
-        h = (h ^ game_state.keys[i]) * 0x100000001b3ULL;
+        h = tt_context_add_position(h, game_state.keys[i]);
     return h;
 }
 
@@ -218,7 +225,8 @@ static inline int score_move(Move m, Bitboard pieces[12], Move pv_or_tt_move, in
     }
 
     int hist = history_moves[side_to_move][MOVE_SRC(m)][MOVE_TARGET(m)];
-    return (int)((int64_t)hist * 400000 / HISTORY_LIMIT); 
+    return (int)((int64_t)hist * 400000 /
+                 (options.history_tuning ? HISTORY_TUNED_LIMIT : HISTORY_LIMIT)); 
 }
 
 static int in_check(Bitboard pieces[12], Bitboard occupancy[3], int side) {
@@ -262,6 +270,7 @@ static int search_make_legal(Move move, Bitboard pieces[12], Bitboard occupancy[
 }
 
 static int quiescence(int alpha, int beta, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_square, int castle_rights, int ply, int halfmove, int null_active) {
+    pv_length[ply] = ply;
     nodes_searched++;
     stats.qnodes++;
     if (search_stop_requested()) return 0;
@@ -351,7 +360,13 @@ static int quiescence(int alpha, int beta, Bitboard pieces[12], Bitboard occupan
         if (aborted) return 0;
 
         if (score >= beta) return beta;
-        if (score > alpha) alpha = score;
+        if (score > alpha) {
+            alpha = score;
+            pv_table[ply][ply] = m;
+            for (int j = ply + 1; j < pv_length[ply + 1]; ++j)
+                pv_table[ply][j] = pv_table[ply + 1][j];
+            pv_length[ply] = pv_length[ply + 1];
+        }
     }
 
     if (checked && legal_moves_count == 0) return -MATE_SCORE + ply;
@@ -444,8 +459,10 @@ static int negamax(int alpha, int beta, int depth, Bitboard pieces[12],
     Move tt_move = 0;
     int tt_score = 0;
     if (!null_active) {
+        // Mate windows must verify shorter mates instead of reusing a horizon-dependent bound.
         if (options.tt_score_cutoffs && !singular_verifying) {
-            if (read_tt(hash_key, depth, alpha, beta, &tt_move, &tt_score, ply))
+            if (tt_probe(hash_key, depth, alpha, beta, &tt_move, &tt_score, ply,
+                         pv_node || alpha <= -MATE_SCORE + MAX_PLY || beta >= MATE_SCORE - MAX_PLY))
                 return tt_score;
         } else tt_move = lookup_tt_move(hash_key);
     }
@@ -539,6 +556,8 @@ static int negamax(int alpha, int beta, int depth, Bitboard pieces[12],
     for (int i = 0; i < moves.count; i++)
         move_scores[i] = score_move(moves.moves[i], pieces, ordered, ply, side_to_move);
 
+    Move quiet_searched[sizeof(moves.moves) / sizeof(moves.moves[0])];
+    int quiet_count = 0;
     int legal_count = 0;
     int original_alpha = alpha;
     Move best_move = 0;
@@ -579,15 +598,26 @@ static int negamax(int alpha, int beta, int depth, Bitboard pieces[12],
                             (depth >= 10 && legal_count >= 15);
             if (options.dynamic_lmr && m != killer_moves[0][ply] && m != killer_moves[1][ply])
                 reduction = lmr_reduction(depth, legal_count);
-            if (reduction > child_depth - 1) reduction = child_depth - 1;
-            score = -negamax(-alpha - 1, -alpha, child_depth - reduction, pieces,
-                             occupancy, side_to_move, ep_square, castle_rights,
-                             ply + 1, 0, next_halfmove, 0, null_active);
-            if (!aborted && score > alpha) {
-                stats.lmr_researches++;
-                reduced = 0; // verify a promising reduced move at full depth
+            if (options.history_tuning && options.history_lmr) {
+                // side_to_move is the child side until unmake.
+                int history = history_moves[side_to_move ^ 1][MOVE_SRC(m)][MOVE_TARGET(m)];
+                int adjustment = history_lmr_adjustment(history);
+                stats.history_lmr_less += adjustment < 0;
+                stats.history_lmr_more += adjustment > 0;
+                reduction += adjustment;
             }
-            if (!aborted && reduced) stats.lmr_reductions++;
+            if (reduction > child_depth - 1) reduction = child_depth - 1;
+            if (reduction <= 0) reduced = 0;
+            else {
+                score = -negamax(-alpha - 1, -alpha, child_depth - reduction, pieces,
+                                 occupancy, side_to_move, ep_square, castle_rights,
+                                 ply + 1, 0, next_halfmove, 0, null_active);
+                if (!aborted && score > alpha) {
+                    stats.lmr_researches++;
+                    reduced = 0;
+                }
+                if (!aborted && reduced) stats.lmr_reductions++;
+            }
         }
         if (!reduced && !aborted) {
             if (!options.pvs || legal_count == 1) {
@@ -611,19 +641,33 @@ static int negamax(int alpha, int beta, int depth, Bitboard pieces[12],
 
         if (!best_move || score > alpha) best_move = m;
         if (score >= beta) {
-            if (!null_active && !singular_verifying) write_tt(hash_key, m, score, depth, LOWER_BOUND, ply);
-            if (quiet && !null_active) {
+            if (!null_active && !singular_verifying) tt_store(hash_key, m, score, depth, LOWER_BOUND, ply);
+            if (quiet && !null_active && !singular_verifying) {
                 if (killer_moves[0][ply] != m) {
                     killer_moves[1][ply] = killer_moves[0][ply];
                     killer_moves[0][ply] = m;
                 }
                 int *history = &history_moves[side_to_move][MOVE_SRC(m)][MOVE_TARGET(m)];
                 int bonus = depth * depth;
-                if (bonus > HISTORY_LIMIT) bonus = HISTORY_LIMIT;
-                *history += bonus - (*history * bonus) / HISTORY_LIMIT;
+                if (options.history_tuning && !singular_verifying) {
+                    bonus *= 32;
+                    if (bonus > 16000) bonus = 16000;
+                    *history = history_gravity(*history, bonus, HISTORY_TUNED_LIMIT);
+                    ++stats.history_bonuses;
+                    for (int j = 0; j < quiet_count; ++j) {
+                        Move failed = quiet_searched[j];
+                        int *previous = &history_moves[side_to_move][MOVE_SRC(failed)][MOVE_TARGET(failed)];
+                        *previous = history_gravity(*previous, -bonus, HISTORY_TUNED_LIMIT);
+                        ++stats.history_maluses;
+                    }
+                } else {
+                    if (bonus > HISTORY_LIMIT) bonus = HISTORY_LIMIT;
+                    *history = history_gravity(*history, bonus, HISTORY_LIMIT);
+                }
             }
             return beta;
         }
+        if (quiet && !null_active && !singular_verifying) quiet_searched[quiet_count++] = m;
         if (score > alpha) {
             alpha = score;
             pv_table[ply][ply] = m;
@@ -634,10 +678,10 @@ static int negamax(int alpha, int beta, int depth, Bitboard pieces[12],
     }
     if (!legal_count) {
         int result = checked ? -MATE_SCORE + ply : 0;
-        if (!null_active && !singular_verifying) write_tt(hash_key, 0, result, depth, EXACT_BOUND, ply);
+        if (!null_active && !singular_verifying) tt_store(hash_key, 0, result, depth, EXACT_BOUND, ply);
         return result;
     }
-    if (!null_active && !singular_verifying) write_tt(hash_key, best_move, alpha, depth,
+    if (!null_active && !singular_verifying) tt_store(hash_key, best_move, alpha, depth,
                                alpha > original_alpha ? EXACT_BOUND : UPPER_BOUND, ply);
     return alpha;
 }
@@ -711,6 +755,7 @@ Move search_best_move_with_state(Bitboard pieces[12], Bitboard occupancy[3],
     singular_verifying = 0;
     lmr_init();
     search_start_ms = cce_now_ms();
+    search_deadline_ms = search_start_ms + options.max_time_ms;
     clear_search_heuristics();
     if (!tt_is_initialized()) init_tt(16);
     reset_tt_stats();

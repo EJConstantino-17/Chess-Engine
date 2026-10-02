@@ -605,7 +605,7 @@ class NumaConfig {
         // See https://learn.microsoft.com/en-us/windows/win32/procthread/numa-support
         // We also do this is if need to force old API for some reason.
         //
-        // 2024-08-26: It appears that we need to actually always force this behaviour.
+        
         // While Windows allows this to work now, such assignments have bad interaction
         // with the scheduler - in particular it still prefers scheduling on the thread's
         // "primary" node, even if it means scheduling SMT processors first.

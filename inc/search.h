@@ -29,7 +29,7 @@ Move search_best_move_with_state(Bitboard pieces[12], Bitboard occupancy[3],
 // switches make diagnostic comparisons reproducible.
 typedef struct {
     int aspiration, pvs, null_move, lmr;
-    int tt_score_cutoffs; // 0: safe move ordering only; 1: experimental score reuse
+    int tt_score_cutoffs; // reuse adequate non-PV bounds with history-safe keys
     uint64_t max_nodes;   // 0: no limit
     int max_time_ms;       // 0: no limit (elapsed wall time)
     int verbose;           // print per-depth search and TT statistics
@@ -38,6 +38,7 @@ typedef struct {
     int futility, reverse_futility, razoring, tt_prefetch;
     int singular; // verified +1 ply extension for a uniquely strong TT move
     int q_delta, q_see, dynamic_lmr, tuned_rfp; // independent benchmark switches
+    int history_tuning, history_lmr;
 } SearchOptions;
 typedef struct {
     uint64_t nodes, qnodes, null_cutoffs, lmr_researches, pvs_researches;
@@ -48,6 +49,7 @@ typedef struct {
     uint64_t prefetches;
     uint64_t singular_attempts, singular_extensions, singular_refutations;
     uint64_t q_delta_skips, q_see_skips;
+    uint64_t history_bonuses, history_maluses, history_lmr_less, history_lmr_more;
     double elapsed_ms; 
     int completed_depth, score, stopped;
     Move best_move;
@@ -59,6 +61,8 @@ SearchOptions search_get_options(void);
 SearchStats search_get_stats(void);
 // the input hook lets a single-threaded search react to stop/quit.
 void search_set_stop_hook(int (*hook)(void *), void *context);
+// Start the remaining move budget on ponderhit without restarting the search.
+void search_start_time_limit(int milliseconds);
 
 Move search_best_move(Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_square, int castle_rights, int depth);
 

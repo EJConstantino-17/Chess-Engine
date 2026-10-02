@@ -26,7 +26,8 @@ typedef struct {
     char partial[8192], pending[8192];
     size_t length;
     int has_pending, stop, quit;
-    int own_book, move_time_cap_ms;
+    int own_book, move_time_cap_ms, ponder_enabled;
+    int pondering, infinite, move_budget_ms;
     char book_file[512];
     char book_index[512];
 #ifdef CCE_NNUE
@@ -72,14 +73,20 @@ static int poll_input(Uci *u, int blocking) {
         }
         u->partial[u->length]=0;
         u->length=0;
-        if(blocking) return 1;
+        if(blocking == 1) return 1;
         if(!strcmp(u->partial,"stop")) u->stop=1;
+        else if(!strcmp(u->partial,"ponderhit")) {
+            if(u->pondering) {
+                u->pondering=0;
+                search_start_time_limit(u->move_budget_ms);
+            }
+        }
         else if(!strcmp(u->partial,"quit")) {u->quit=1;u->stop=1;}
         else if(!strcmp(u->partial,"isready")) {puts("readyok");fflush(stdout);}
         else if(!u->has_pending) {
             strcpy(u->pending,u->partial);u->has_pending=1;u->stop=1;
         }
-        if(u->stop) return 1;
+        if(u->stop || blocking == 2) return 1;
     }
     return 1;
 }
@@ -148,15 +155,27 @@ static int get_number(const char *line,const char *name,int fallback) {
     }
     return fallback;
 }
+static int has_token(const char *line, const char *word) {
+    size_t n=strlen(word);
+    for(const char *p=line; *p;) {
+        p+=strspn(p," \t");
+        size_t len=strcspn(p," \t");
+        if(len==n && !strncmp(p,word,n)) return 1;
+        p+=len;
+    }
+    return 0;
+}
 static void go(Uci *u,const char *line) {
     SearchOptions saved=search_get_options(), opts=saved;
+    u->pondering=has_token(line,"ponder");
+    u->infinite=has_token(line,"infinite");
     int depth=get_number(line,"depth",MAX_PLY-2);
     int movetime=get_number(line,"movetime",-1);
     int clock_ms=get_number(line,u->side==WHITE?"wtime":"btime",-1);
     int inc=get_number(line,u->side==WHITE?"winc":"binc",0);
     // play instantly in a timed game; explicit depth and
     // infinite-analysis requests still run the search for useful analysis.
-    if (u->own_book && (movetime >= 0 || clock_ms >= 0)) {
+    if (u->own_book && !u->pondering && !u->infinite && (movetime >= 0 || clock_ms >= 0)) {
         int index_loaded=0;
         Move book=opening_book_pick_index(u->book_index,u->pieces,u->occ,
                                            u->side,u->ep,u->castle,&index_loaded);
@@ -186,27 +205,44 @@ static void go(Uci *u,const char *line) {
         if (u->move_time_cap_ms > 0 && opts.max_time_ms > u->move_time_cap_ms)
             opts.max_time_ms=u->move_time_cap_ms;
     }
+    u->move_budget_ms=opts.max_time_ms;
+    if(u->pondering || u->infinite) opts.max_time_ms=0;
     int nodes=get_number(line,"nodes",0);
     if(nodes>0)opts.max_nodes=(uint64_t)nodes;
     u->stop=0;
     search_set_options(opts);
     search_set_stop_hook(stop_hook,u);
     Move best=search_best_move_with_state(u->pieces,u->occ,u->side,u->ep,u->castle,depth,&u->history);
-    search_set_stop_hook(NULL,NULL);
     SearchStats st=search_get_stats();
+    // A depth/node limit or a solved mate may finish calculation early.
+    // Keep its result private until ponderhit or stop, and remain responsive.
+    while(!u->stop && !u->quit && (u->pondering || u->infinite))
+        poll_input(u,2);
+    search_set_stop_hook(NULL,NULL);
+    u->pondering=0;u->infinite=0;
     search_set_options(saved);
+    if(u->quit) return;
     char move[6];format_move(best,move);
     
     unsigned long long elapsed = (unsigned long long)(st.elapsed_ms > 0 ? st.elapsed_ms : 0);
     unsigned long long nps = st.elapsed_ms > 0 ? (unsigned long long)(st.nodes * 1000.0 / st.elapsed_ms) : 0;
-    printf("info depth %d score cp %d nodes %llu time %llu nps %llu",
-           st.completed_depth,st.score,(unsigned long long)st.nodes,elapsed,nps);
+    printf("info depth %d score ", st.completed_depth);
+    if (st.score >= MATE_SCORE - MAX_PLY || st.score <= -MATE_SCORE + MAX_PLY) {
+        int plies = MATE_SCORE - abs(st.score);
+        int moves = (plies + 1) / 2;
+        printf("mate %d", st.score < 0 ? -moves : moves);
+    } else printf("cp %d", st.score);
+    printf(" nodes %llu time %llu nps %llu", (unsigned long long)st.nodes,elapsed,nps);
     if (st.pv_count) {
         printf(" pv");
         for (int i=0;i<st.pv_count;++i) { char text[6];format_move(st.pv[i],text);printf(" %s",text); }
     }
     putchar('\n');
-    printf("bestmove %s\n",move);fflush(stdout);
+    printf("bestmove %s",move);
+    if(u->ponder_enabled && st.pv_count>1 && st.pv[0]==best) {
+        char reply[6];format_move(st.pv[1],reply);printf(" ponder %s",reply);
+    }
+    putchar('\n');fflush(stdout);
 }
 int uci_loop(void) {
     Uci u={0};reset_position(&u,START_FEN);
@@ -227,6 +263,7 @@ int uci_loop(void) {
             puts("option name Hash type spin default 64 min 1 max 1024");
             puts("option name Clear Hash type button");
             puts("option name OwnBook type check default true");
+            puts("option name Ponder type check default false");
             puts("option name BookFile type string default opening_book.txt");
             puts("option name BookIndex type string default opening_book.cbk");
             puts("option name Move Time Cap type spin default 2000 min 0 max 60000");
@@ -260,6 +297,8 @@ int uci_loop(void) {
         else if(!strncmp(u.partial,"setoption name Hash value ",26)) {
             int mb=atoi(u.partial+26);if(mb>=1&&mb<=1024)init_tt((size_t)mb);
         } else if(!strcmp(u.partial,"setoption name Clear Hash"))clear_tt();
+        else if(!strncmp(u.partial,"setoption name Ponder value ",28))
+            u.ponder_enabled=!strcmp(u.partial+28,"true") || !strcmp(u.partial+28,"1");
         else if(!strncmp(u.partial,"setoption name OwnBook value ",29))
             u.own_book=strcmp(u.partial+29,"false") && strcmp(u.partial+29,"0");
         else if(!strncmp(u.partial,"setoption name BookFile value ",30)) {
