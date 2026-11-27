@@ -269,6 +269,20 @@ static int search_make_legal(Move move, Bitboard pieces[12], Bitboard occupancy[
     return 1;
 }
 
+// Real non-root nodes cannot lose before this ply, or win before the next ply.
+// Keep exact terminal results even when the requested window is impossible.
+static int tighten_mate_window(int *alpha,int *beta,Bitboard pieces[12],Bitboard occupancy[3],
+                               int side,int ep,int castle,int ply,int checked,int *value) {
+    int lo=-MATE_SCORE+ply, hi=MATE_SCORE-ply-1;
+    if(*alpha<lo) *alpha=lo;
+    if(*beta>hi) *beta=hi;
+    if(*alpha<*beta) return 0;
+    if(!legal_move_exists(pieces,occupancy,side,ep,castle,ply))
+        *value=checked?-MATE_SCORE+ply:0;
+    else *value=*alpha;
+    return 1;
+}
+
 static int quiescence(int alpha, int beta, Bitboard pieces[12], Bitboard occupancy[3], int side_to_move, int ep_square, int castle_rights, int ply, int halfmove, int null_active) {
     pv_length[ply] = ply;
     nodes_searched++;
@@ -279,6 +293,12 @@ static int quiescence(int alpha, int beta, Bitboard pieces[12], Bitboard occupan
     if (!null_active && draw_rule_applies(position_key, halfmove, ply, pieces, occupancy,
                           side_to_move, ep_square, castle_rights)) return 0;
     int checked = in_check(pieces, occupancy, side_to_move);
+    if (ply > 0 && !null_active && !singular_verifying && beta - alpha == 1) {
+        int mate_bound;
+        if (tighten_mate_window(&alpha, &beta, pieces, occupancy, side_to_move,
+                                ep_square, castle_rights, ply, checked, &mate_bound))
+            return mate_bound;
+    }
 
     if (ply >= MAX_PLY - 1) {
         if (checked) {
@@ -456,6 +476,12 @@ static int negamax(int alpha, int beta, int depth, Bitboard pieces[12],
     if (!null_active && draw_rule_applies(position_key, halfmove, ply, pieces,
                                            occupancy, side_to_move, ep_square, castle_rights)) return 0;
     int checked = in_check(pieces, occupancy, side_to_move);
+    if (ply > 0 && !null_active && !singular_verifying && !pv_node && beta - alpha == 1) {
+        int mate_bound;
+        if (tighten_mate_window(&alpha, &beta, pieces, occupancy, side_to_move,
+                                ep_square, castle_rights, ply, checked, &mate_bound))
+            return mate_bound;
+    }
     Move tt_move = 0;
     int tt_score = 0;
     if (!null_active) {
